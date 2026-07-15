@@ -33,6 +33,8 @@ python3 -m streamlit run app.py
 
 La chiave di match tra i file è l'**Employee ID** in formato `2000xxx`.
 
+**Coerenza col mese scelto**: sui file ordini (Zippi e Amati) eventuali giorni fuori dal mese selezionato bloccano il processamento con un errore descrittivo — sugli ordini la correttezza del mese è essenziale. Sul file ore invece eventuali colonne di altri mesi (es. l'export sconfina nel mese successivo, come tipicamente accade) vengono **ignorate silenziosamente**: servono solo come supporto per leggere le ore dei giorni del mese scelto.
+
 ## Output
 
 - **Export solleciti anomalie**: Excel con ID dipendente, nome, email, giorno e ragione dell'anomalia — pensato come base per un flusso Power Automate di sollecito via email.

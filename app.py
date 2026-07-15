@@ -39,8 +39,10 @@ st.title("Controllo Pasti Aziendali — Amati / Zippi")
 with st.sidebar:
     st.header("Periodo di riferimento")
     today = date.today()
-    year = st.number_input("Anno", min_value=2020, max_value=2100, value=today.year, step=1)
-    month = st.selectbox("Mese", options=list(range(1, 13)), format_func=lambda m: MONTHS_IT[m - 1], index=today.month - 1)
+    # Default: mese precedente a quello corrente (il mese "chiuso" da verificare).
+    default_year, default_month = (today.year, today.month - 1) if today.month > 1 else (today.year - 1, 12)
+    year = st.number_input("Anno", min_value=2020, max_value=2100, value=default_year, step=1)
+    month = st.selectbox("Mese", options=list(range(1, 13)), format_func=lambda m: MONTHS_IT[m - 1], index=default_month - 1)
     exclude_weekends = st.checkbox(
         "Escludi sabato/domenica dal calcolo (segnala se contengono dati)", value=True
     )
@@ -94,6 +96,20 @@ effective_df = apply_overrides(master_df, st.session_state.overrides, drop_fully
 
 st.subheader("Vista dipendenti — ordini e anomalie")
 
+show_only_anomalies = st.toggle("Mostra solo anomalie", value=False)
+
+with st.expander("Filtri"):
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        search_employee = st.text_input("Cerca dipendente (ID o nome)", value="")
+    with col_f2:
+        first_day = date(year, month, 1)
+        last_day = date(year, month, calendar.monthrange(year, month)[1])
+        date_range = st.date_input(
+            "Intervallo date", value=(first_day, last_day),
+            min_value=first_day, max_value=last_day,
+        )
+
 view = edit_df.copy()
 view["Anomalia"] = view.apply(
     lambda r: ", ".join(
@@ -105,6 +121,27 @@ view["Anomalia"] = view.apply(
     axis=1,
 )
 view = view.sort_values(["employee_id", "date"])
+
+n_total = len(view)
+
+if show_only_anomalies:
+    view = view[view["Anomalia"] != ""]
+
+if search_employee.strip():
+    q = search_employee.strip().lower()
+    view = view[
+        view["employee_id"].str.lower().str.contains(q, na=False)
+        | view["nombre"].str.lower().str.contains(q, na=False)
+    ]
+
+if isinstance(date_range, tuple) and len(date_range) == 2:
+    d_from, d_to = date_range
+    view = view[(view["date"] >= d_from) & (view["date"] <= d_to)]
+elif isinstance(date_range, date):
+    view = view[view["date"] == date_range]
+
+st.caption(f"{len(view)} righe mostrate su {n_total} totali.")
+
 view["Rimuovi Amati"] = view.apply(lambda r: bool(st.session_state.overrides.get((r["employee_id"], r["date"]), {}).get("remove_amati")), axis=1)
 view["Rimuovi Zippi"] = view.apply(lambda r: bool(st.session_state.overrides.get((r["employee_id"], r["date"]), {}).get("remove_zippi")), axis=1)
 view["Abbona vincolo ore"] = view.apply(lambda r: bool(st.session_state.overrides.get((r["employee_id"], r["date"]), {}).get("waive_hours")), axis=1)
@@ -151,6 +188,14 @@ if st.button("Applica forzature"):
 st.subheader("Recap fornitore — validazione fatture")
 st.caption("Conteggio pasti forniti (nessun importo: i costi 23,46/165 riguardano l'addebito al dipendente).")
 recap = supplier_recap(effective_df)
+
+kpi1, kpi2, kpi3 = st.columns(3)
+total_amati = int(recap["Amati"].sum()) if not recap.empty else 0
+total_zippi = int(recap["Zippi"].sum()) if not recap.empty else 0
+kpi1.metric("Totale pasti Amati", total_amati)
+kpi2.metric("Totale pasti Zippi", total_zippi)
+kpi3.metric("Totale pasti mese", total_amati + total_zippi)
+
 st.dataframe(recap, hide_index=True, use_container_width=True)
 
 st.subheader("Export")
@@ -170,7 +215,7 @@ with col1:
 with col2:
     summary_bytes = build_summary_export(effective_df, year_sel, month_sel)
     st.download_button(
-        "Scarica riepilogo colorato",
+        "Scarica riepilogo",
         data=summary_bytes,
         file_name=f"riepilogo_pasti_{year_sel}-{month_sel:02d}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

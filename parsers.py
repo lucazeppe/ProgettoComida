@@ -12,10 +12,13 @@ from datetime import date
 import openpyxl
 import pandas as pd
 
-ID_COLUMN_CANDIDATES = [
-    "dipendente", "empleado", "employee id", "numero de empleado", "id",
-    "employee", "id dipendente",
-]
+# Ordine di priorità: "id" (colonna con l'Employee ID 2000xxx aziendale) deve
+# vincere su "dipendente"/"empleado" quando entrambe compaiono nella stessa
+# intestazione, perché quest'ultime sono spesso un numero dipendente interno
+# più corto (es. 100) e NON la chiave di match richiesta.
+ID_COLUMN_CANDIDATES_PRIORITY = ["id", "employee id", "id dipendente"]
+ID_COLUMN_CANDIDATES_FALLBACK = ["dipendente", "empleado", "numero de empleado", "employee"]
+ID_COLUMN_CANDIDATES = ID_COLUMN_CANDIDATES_PRIORITY + ID_COLUMN_CANDIDATES_FALLBACK
 
 
 def _normalize_id(value) -> str | None:
@@ -261,12 +264,15 @@ def parse_hours(file, year: int, month: int, warn_weekends: bool = True) -> tupl
     id_col_idx = None
     for i in range(1, 11):
         row = [c.value for c in ws[i]]
-        for j, v in enumerate(row):
-            if v and str(v).strip().lower() in ID_COLUMN_CANDIDATES:
-                id_row_idx = i
-                id_col_idx = j
-                break
-        if id_row_idx is not None:
+        lower_row = [str(v).strip().lower() if v else "" for v in row]
+        # Prima cerca una colonna "ID" prioritaria; solo se assente in questa
+        # riga, ripiega su "Dipendente"/"Empleado" (numero interno, non ideale).
+        match_j = next((j for j, v in enumerate(lower_row) if v in ID_COLUMN_CANDIDATES_PRIORITY), None)
+        if match_j is None:
+            match_j = next((j for j, v in enumerate(lower_row) if v in ID_COLUMN_CANDIDATES_FALLBACK), None)
+        if match_j is not None:
+            id_row_idx = i
+            id_col_idx = match_j
             break
 
     if id_row_idx is None:
@@ -287,19 +293,30 @@ def parse_hours(file, year: int, month: int, warn_weekends: bool = True) -> tupl
         raise ValueError("File Ore: nessuna colonna con intestazione data trovata.")
 
     date_row = [c.value for c in ws[date_row_idx]]
-    date_cols = {
+    all_date_cols = {
         j: v.date() for j, v in enumerate(date_row)
         if hasattr(v, "date")
     }
 
     header_row_idx = max(id_row_idx, date_row_idx)
 
-    out_of_month = [d for d in date_cols.values() if not _in_month(d, year, month)]
-    if out_of_month:
-        examples = ", ".join(sorted(d.isoformat() for d in set(out_of_month))[:5])
+    # Il file ore è solo di supporto (serve unicamente a leggere le ore dei
+    # giorni del mese scelto): eventuali colonne di altri mesi (es. l'export
+    # sconfina nel mese successivo) vengono ignorate silenziosamente, non
+    # generano errore né warning.
+    date_cols = {j: d for j, d in all_date_cols.items() if _in_month(d, year, month)}
+    if not date_cols:
         raise ValueError(
-            f"File Ore: trovate colonne con date fuori dal mese scelto ({year}-{month:02d}), "
-            f"es: {examples}. Verifica di aver caricato il file del mese corretto."
+            f"File Ore: nessuna colonna con data del mese scelto ({year}-{month:02d}) trovata. "
+            "Verifica di aver caricato il file del mese corretto."
+        )
+
+    missing_days = sorted(set(month_business_days(year, month)) - set(date_cols.values()))
+    if missing_days:
+        examples = ", ".join(d.isoformat() for d in missing_days[:5])
+        warnings.append(
+            f"File Ore: mancano colonne per {len(missing_days)} giorno/i lavorativo/i di "
+            f"{year}-{month:02d} (es: {examples}) — quei giorni saranno trattati come 0 ore."
         )
 
     records = []

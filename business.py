@@ -175,7 +175,11 @@ def check_weekend_activity(master_df: pd.DataFrame) -> list[str]:
 
 
 def supplier_recap(master_df: pd.DataFrame) -> pd.DataFrame:
-    """Conteggio pasti per fornitore/giorno, per validare le fatture (nessun importo)."""
+    """Conteggio pasti per fornitore/giorno, per validare le fatture (nessun importo).
+
+    Solo il dettaglio giornaliero: i totali del mese si calcolano a parte
+    (es. sommando le colonne Amati/Zippi) per essere mostrati come KPI.
+    """
     rows = []
     for d, group in master_df.groupby("date"):
         rows.append({
@@ -183,10 +187,4 @@ def supplier_recap(master_df: pd.DataFrame) -> pd.DataFrame:
             "Amati": int(group["amati"].sum()),
             "Zippi": int(group["zippi"].sum()),
         })
-    recap = pd.DataFrame(rows, columns=["date", "Amati", "Zippi"]).sort_values("date")
-    total_row = pd.DataFrame([{
-        "date": "TOTALE",
-        "Amati": recap["Amati"].sum() if not recap.empty else 0,
-        "Zippi": recap["Zippi"].sum() if not recap.empty else 0,
-    }])
-    return pd.concat([recap, total_row], ignore_index=True)
+    return pd.DataFrame(rows, columns=["date", "Amati", "Zippi"]).sort_values("date").reset_index(drop=True)
