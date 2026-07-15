@@ -11,12 +11,11 @@ HOURS_THRESHOLD = 6
 COST_LOW = 23.46
 COST_HIGH = 165.0
 
-ANOMALY_DOUBLE_LABEL = "Doppia prenotazione"
-ANOMALY_HOURS_LABEL = "Ore ufficio insufficienti"
-
-# Gli export Excel usano sempre inglese (lingua neutra), indipendentemente
-# dalla lingua dell'interfaccia — così eventuali automazioni a valle (es.
-# Power Automate) non dipendono dalla lingua scelta a video.
+# Le etichette anomalia a video seguono la lingua scelta (vedi i18n.py,
+# chiavi "anomaly_double"/"anomaly_hours"). Gli export Excel invece usano
+# sempre inglese (lingua neutra), indipendentemente dalla lingua
+# dell'interfaccia — così eventuali automazioni a valle (es. Power Automate)
+# non dipendono dalla lingua scelta a video.
 ANOMALY_DOUBLE_LABEL_EXPORT = "Double Booking"
 ANOMALY_HOURS_LABEL_EXPORT = "Insufficient Office Hours"
 

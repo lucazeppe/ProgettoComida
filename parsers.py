@@ -12,6 +12,8 @@ from datetime import date
 import openpyxl
 import pandas as pd
 
+import i18n
+
 # Ordine di priorità: "id" (colonna con l'Employee ID 2000xxx aziendale) deve
 # vincere su "dipendente"/"empleado" quando entrambe compaiono nella stessa
 # intestazione, perché quest'ultime sono spesso un numero dipendente interno
@@ -80,7 +82,7 @@ def _parse_hours_value(value) -> float:
 # ZIPPI: righe = dipendente, colonne D..fine = date di ordine (valore datetime)
 # ---------------------------------------------------------------------------
 
-def parse_zippi(file, year: int, month: int, warn_weekends: bool = True) -> tuple[pd.DataFrame, list[str]]:
+def parse_zippi(file, year: int, month: int, warn_weekends: bool = True, lang: str = "it") -> tuple[pd.DataFrame, list[str]]:
     warnings: list[str] = []
     wb = openpyxl.load_workbook(file, data_only=True)
     ws = wb[wb.sheetnames[0]]
@@ -91,10 +93,7 @@ def parse_zippi(file, year: int, month: int, warn_weekends: bool = True) -> tupl
             header_row_idx = i
             break
     if header_row_idx is None:
-        raise ValueError(
-            "File Zippi: non trovo la riga di intestazione (colonna 'Nombre') "
-            "nelle prime 15 righe del foglio."
-        )
+        raise ValueError(i18n.t(lang, "err_zippi_no_header"))
 
     header = [c for c in ws[header_row_idx]]
     header_values = [c.value for c in header]
@@ -106,11 +105,11 @@ def parse_zippi(file, year: int, month: int, warn_weekends: bool = True) -> tupl
         try:
             col_id = next(i for i, v in enumerate(lower_header) if "numero de empleado" in v)
         except StopIteration:
-            raise ValueError("File Zippi: colonna 'Numero de empleado' non trovata.")
+            raise ValueError(i18n.t(lang, "err_zippi_no_id_col"))
     try:
         col_email = lower_header.index("correo")
     except ValueError:
-        raise ValueError("File Zippi: colonna 'Correo' non trovata.")
+        raise ValueError(i18n.t(lang, "err_zippi_no_email_col"))
 
     date_col_start = max(col_id, col_email) + 1
 
@@ -142,20 +141,16 @@ def parse_zippi(file, year: int, month: int, warn_weekends: bool = True) -> tupl
             })
 
     if out_of_month_dates:
-        examples = ", ".join(f"{n} il {d.isoformat()}" for _, n, d in out_of_month_dates[:5])
-        raise ValueError(
-            f"File Zippi: trovate date fuori dal mese scelto ({year}-{month:02d}), "
-            f"es: {examples}. Verifica di aver caricato il file del mese corretto."
-        )
+        prefix = i18n.t(lang, "on_date_prefix")
+        examples = ", ".join(f"{n} {prefix} {d.isoformat()}" for _, n, d in out_of_month_dates[:5])
+        raise ValueError(i18n.t(lang, "err_zippi_out_of_month", year=year, month=month, examples=examples))
 
     df = pd.DataFrame(records, columns=["employee_id", "nombre", "email", "date"])
 
     if warn_weekends:
         weekend_rows = df[df["date"].apply(lambda d: d.weekday() >= 5)]
         if not weekend_rows.empty:
-            warnings.append(
-                f"File Zippi: trovati {len(weekend_rows)} ordini nel weekend (sabato/domenica), inattesi."
-            )
+            warnings.append(i18n.t(lang, "warn_zippi_weekend_orders", n=len(weekend_rows)))
 
     return df, warnings
 
@@ -167,7 +162,7 @@ def parse_zippi(file, year: int, month: int, warn_weekends: bool = True) -> tupl
 WEEKDAY_COLS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
 
 
-def parse_amati(file, year: int, month: int) -> tuple[pd.DataFrame, list[str]]:
+def parse_amati(file, year: int, month: int, lang: str = "it") -> tuple[pd.DataFrame, list[str]]:
     warnings: list[str] = []
     wb = openpyxl.load_workbook(file, data_only=True)
 
@@ -192,8 +187,7 @@ def parse_amati(file, year: int, month: int) -> tuple[pd.DataFrame, list[str]]:
     sheet_names = wb.sheetnames
     if len(sheet_names) != len(padded_weeks):
         raise ValueError(
-            f"File Amati: trovati {len(sheet_names)} fogli ma il mese {year}-{month:02d} "
-            f"ha {len(padded_weeks)} settimane lavorative attese. Verifica il file/mese scelto."
+            i18n.t(lang, "err_amati_sheet_week_mismatch", n=len(sheet_names), year=year, month=month, m=len(padded_weeks))
         )
 
     # I fogli vengono abbinati alle settimane in base al solo ordine delle tab
@@ -205,11 +199,7 @@ def parse_amati(file, year: int, month: int) -> tuple[pd.DataFrame, list[str]]:
     if all(sheet_numbers):
         numbers = [int(m.group()) for m in sheet_numbers]
         if numbers != sorted(numbers):
-            warnings.append(
-                f"File Amati: i fogli non sembrano in ordine cronologico in base al numero "
-                f"nel nome ({', '.join(sheet_names)}). Le settimane potrebbero essere "
-                "attribuite ai fogli sbagliati: verifica l'ordine delle schede nel file."
-            )
+            warnings.append(i18n.t(lang, "warn_amati_sheet_order", sheet_names=", ".join(sheet_names)))
 
     records = []
     for sheet_name, week_slots in zip(sheet_names, padded_weeks):
@@ -222,7 +212,7 @@ def parse_amati(file, year: int, month: int) -> tuple[pd.DataFrame, list[str]]:
             col_id = lower_header.index("empleado")
             col_email = lower_header.index("correo")
         except ValueError as e:
-            raise ValueError(f"File Amati, foglio '{sheet_name}': intestazione inattesa ({e}).")
+            raise ValueError(i18n.t(lang, "err_amati_bad_header", sheet_name=sheet_name, e=e))
 
         day_cols = {}
         for wd_idx, wd_name in enumerate(WEEKDAY_COLS):
@@ -254,10 +244,11 @@ def parse_amati(file, year: int, month: int) -> tuple[pd.DataFrame, list[str]]:
                 target_date = week_slots[wd_idx]
                 if target_date is None:
                     # Giorno del foglio settimanale fuori dal mese scelto (sconfinamento fisiologico)
-                    warnings.append(
-                        f"File Amati, foglio '{sheet_name}': ordine per {nombre} {apellidos} "
-                        f"in un giorno ({WEEKDAY_COLS[wd_idx]}) fuori dal mese {year}-{month:02d}, ignorato."
-                    )
+                    warnings.append(i18n.t(
+                        lang, "warn_amati_order_out_of_month",
+                        sheet_name=sheet_name, nombre=nombre, apellidos=apellidos,
+                        weekday=WEEKDAY_COLS[wd_idx], year=year, month=month,
+                    ))
                     continue
                 records.append({
                     "employee_id": emp_id,
@@ -275,7 +266,7 @@ def parse_amati(file, year: int, month: int) -> tuple[pd.DataFrame, list[str]]:
 # ORE LAVORATE: colonna ID + colonne datetime con ore
 # ---------------------------------------------------------------------------
 
-def parse_hours(file, year: int, month: int, warn_weekends: bool = True) -> tuple[pd.DataFrame, list[str]]:
+def parse_hours(file, year: int, month: int, warn_weekends: bool = True, lang: str = "it") -> tuple[pd.DataFrame, list[str]]:
     warnings: list[str] = []
     wb = openpyxl.load_workbook(file, data_only=True)
     ws = wb[wb.sheetnames[0]]
@@ -300,10 +291,7 @@ def parse_hours(file, year: int, month: int, warn_weekends: bool = True) -> tupl
             break
 
     if id_row_idx is None:
-        raise ValueError(
-            "File Ore: non trovo una colonna ID dipendente riconosciuta "
-            f"(cercate: {ID_COLUMN_CANDIDATES}) nelle prime righe del file."
-        )
+        raise ValueError(i18n.t(lang, "err_hours_no_id_col", candidates=ID_COLUMN_CANDIDATES))
 
     # Nome/Cognome (se presenti) sono nella stessa riga della colonna ID.
     id_header_row = [c.value for c in ws[id_row_idx]]
@@ -320,7 +308,7 @@ def parse_hours(file, year: int, month: int, warn_weekends: bool = True) -> tupl
             best_count = count
             date_row_idx = i
     if date_row_idx is None or best_count == 0:
-        raise ValueError("File Ore: nessuna colonna con intestazione data trovata.")
+        raise ValueError(i18n.t(lang, "err_hours_no_date_header"))
 
     date_row = [c.value for c in ws[date_row_idx]]
     all_date_cols = {
@@ -336,18 +324,12 @@ def parse_hours(file, year: int, month: int, warn_weekends: bool = True) -> tupl
     # generano errore né warning.
     date_cols = {j: d for j, d in all_date_cols.items() if _in_month(d, year, month)}
     if not date_cols:
-        raise ValueError(
-            f"File Ore: nessuna colonna con data del mese scelto ({year}-{month:02d}) trovata. "
-            "Verifica di aver caricato il file del mese corretto."
-        )
+        raise ValueError(i18n.t(lang, "err_hours_no_month_date", year=year, month=month))
 
     missing_days = sorted(set(month_business_days(year, month)) - set(date_cols.values()))
     if missing_days:
         examples = ", ".join(d.isoformat() for d in missing_days[:5])
-        warnings.append(
-            f"File Ore: mancano colonne per {len(missing_days)} giorno/i lavorativo/i di "
-            f"{year}-{month:02d} (es: {examples}) — quei giorni saranno trattati come 0 ore."
-        )
+        warnings.append(i18n.t(lang, "warn_hours_missing_columns", n=len(missing_days), year=year, month=month, examples=examples))
 
     records = []
     seen_ids = set()
@@ -383,26 +365,18 @@ def parse_hours(file, year: int, month: int, warn_weekends: bool = True) -> tupl
             try:
                 hours = _parse_hours_value(raw_hours)
             except (ValueError, TypeError):
-                raise ValueError(
-                    f"File Ore: valore ore non riconosciuto ('{raw_hours}') per il dipendente "
-                    f"{emp_id} il {d.isoformat()}. Atteso un numero (es. 8 o 8,5)."
-                )
+                raise ValueError(i18n.t(lang, "err_hours_bad_value", raw_hours=raw_hours, emp_id=emp_id, date=d.isoformat()))
             records.append({"employee_id": emp_id, "date": d, "hours": hours, "nombre_ore": nombre_ore})
 
     if duplicate_ids:
         examples = ", ".join(sorted(duplicate_ids)[:10])
-        raise ValueError(
-            f"File Ore: trovati ID dipendente duplicati (righe diverse per lo stesso ID): "
-            f"{examples}. Verifica il file, ogni dipendente deve avere una sola riga."
-        )
+        raise ValueError(i18n.t(lang, "err_hours_duplicate_ids", examples=examples))
 
     df = pd.DataFrame(records, columns=["employee_id", "date", "hours", "nombre_ore"])
 
     if warn_weekends:
         weekend_rows = df[(df["hours"] > 0) & (df["date"].apply(lambda d: d.weekday() >= 5))]
         if not weekend_rows.empty:
-            warnings.append(
-                f"File Ore: trovate {len(weekend_rows)} righe con ore nel weekend (sabato/domenica), inattese."
-            )
+            warnings.append(i18n.t(lang, "warn_hours_weekend_rows", n=len(weekend_rows)))
 
     return df, warnings

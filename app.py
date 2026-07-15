@@ -7,9 +7,8 @@ from datetime import date, datetime
 import pandas as pd
 import streamlit as st
 
+import i18n
 from business import (
-    ANOMALY_DOUBLE_LABEL,
-    ANOMALY_HOURS_LABEL,
     apply_overrides,
     build_master,
     is_intern,
@@ -18,12 +17,22 @@ from business import (
 from exports import build_reminder_export, build_summary_export
 from parsers import parse_amati, parse_hours, parse_zippi
 
-st.set_page_config(page_title="Controllo Pasti Aziendali", layout="wide")
+if "lang" not in st.session_state:
+    st.session_state.lang = "it"
 
-MONTHS_IT = [
-    "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
-    "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre",
-]
+st.set_page_config(page_title=i18n.t(st.session_state.lang, "page_title"), layout="wide")
+
+with st.sidebar:
+    st.radio(
+        "🌐",
+        options=["it", "es"],
+        format_func=lambda code: i18n.FLAG_LABELS[code],
+        horizontal=True,
+        key="lang",
+        label_visibility="collapsed",
+    )
+
+lang = st.session_state.lang
 
 if "master_df" not in st.session_state:
     st.session_state.master_df = None
@@ -38,38 +47,39 @@ if "missing_hours_employees" not in st.session_state:
 if "missing_hours_dismissed" not in st.session_state:
     st.session_state.missing_hours_dismissed = False
 
-st.title("Controllo Pasti Aziendali — Amati / Zippi")
+st.title(i18n.t(lang, "app_title"))
 
 with st.sidebar:
-    st.header("Periodo di riferimento")
+    st.header(i18n.t(lang, "sidebar_period_header"))
     today = date.today()
     # Default: mese precedente a quello corrente (il mese "chiuso" da verificare).
     default_year, default_month = (today.year, today.month - 1) if today.month > 1 else (today.year - 1, 12)
-    year = st.number_input("Anno", min_value=2020, max_value=2100, value=default_year, step=1)
-    month = st.selectbox("Mese", options=list(range(1, 13)), format_func=lambda m: MONTHS_IT[m - 1], index=default_month - 1)
-    exclude_weekends = st.checkbox(
-        "Escludi sabato/domenica dal calcolo (segnala se contengono dati)", value=True
+    year = st.number_input(i18n.t(lang, "label_year"), min_value=2020, max_value=2100, value=default_year, step=1)
+    month = st.selectbox(
+        i18n.t(lang, "label_month"), options=list(range(1, 13)),
+        format_func=lambda m: i18n.MONTHS[lang][m - 1], index=default_month - 1,
     )
+    exclude_weekends = st.checkbox(i18n.t(lang, "checkbox_exclude_weekends"), value=True)
 
-    st.header("File di input")
-    zippi_file = st.file_uploader("Ordini Zippi (.xlsx)", type=["xlsx"])
-    amati_file = st.file_uploader("Ordini Amati (.xlsx)", type=["xlsx"])
-    hours_file = st.file_uploader("Ore lavorate (.xlsx)", type=["xlsx"])
+    st.header(i18n.t(lang, "sidebar_files_header"))
+    zippi_file = st.file_uploader(i18n.t(lang, "uploader_zippi"), type=["xlsx"])
+    amati_file = st.file_uploader(i18n.t(lang, "uploader_amati"), type=["xlsx"])
+    hours_file = st.file_uploader(i18n.t(lang, "uploader_hours"), type=["xlsx"])
 
-    process = st.button("Processa", type="primary", use_container_width=True)
+    process = st.button(i18n.t(lang, "button_process"), type="primary", use_container_width=True)
 
 if process:
     if not (zippi_file and amati_file and hours_file):
-        st.error("Carica tutti e 3 i file prima di procedere.")
+        st.error(i18n.t(lang, "error_missing_files"))
         st.stop()
 
     all_warnings: list[str] = []
     try:
-        zippi_df, w = parse_zippi(zippi_file, year, month, warn_weekends=exclude_weekends)
+        zippi_df, w = parse_zippi(zippi_file, year, month, warn_weekends=exclude_weekends, lang=lang)
         all_warnings += w
-        amati_df, w = parse_amati(amati_file, year, month)
+        amati_df, w = parse_amati(amati_file, year, month, lang=lang)
         all_warnings += w
-        hours_df, w = parse_hours(hours_file, year, month, warn_weekends=exclude_weekends)
+        hours_df, w = parse_hours(hours_file, year, month, warn_weekends=exclude_weekends, lang=lang)
         all_warnings += w
         master_df = build_master(zippi_df, amati_df, hours_df, year, month, exclude_weekends=exclude_weekends)
     except ValueError as e:
@@ -101,7 +111,7 @@ if process:
     st.session_state.missing_hours_dismissed = False
 
 if st.session_state.master_df is None:
-    st.info("Carica i 3 file e premi **Processa** per iniziare.")
+    st.info(i18n.t(lang, "info_upload_prompt"))
     st.stop()
 
 for w in st.session_state.warnings:
@@ -110,40 +120,21 @@ for w in st.session_state.warnings:
 if st.session_state.missing_hours_employees and not st.session_state.missing_hours_dismissed:
     col_w1, col_w2 = st.columns([12, 1])
     with col_w1:
-        missing = st.session_state.missing_hours_employees
-        n_interns = sum(1 for m in missing if m["is_intern"])
-        n_regular = len(missing) - n_interns
-
-        subject_parts = []
-        if n_interns:
-            subject_parts.append(f"{n_interns} praticante" if n_interns == 1 else f"{n_interns} praticanti")
-        if n_regular:
-            subject_parts.append(f"{n_regular} dipendente" if n_regular == 1 else f"{n_regular} dipendenti")
-        subject = " e ".join(subject_parts)
-        verb = "ha" if len(missing) == 1 else "hanno"
-
-        names = ", ".join(m["label"] for m in missing[:10])
-        more = f" e altri {len(missing) - 10}" if len(missing) > 10 else ""
-        st.warning(
-            f"{subject} {verb} ordini ma non risultano nel file ore "
-            f"(trattati come 0 ore, quindi anomalia su tutti i loro ordini): {names}{more}."
-        )
+        st.warning(i18n.missing_hours_warning(lang, st.session_state.missing_hours_employees))
     with col_w2:
-        if st.button("✕", key="dismiss_missing_hours", help="Chiudi avviso"):
+        if st.button("✕", key="dismiss_missing_hours", help=i18n.t(lang, "dismiss_help")):
             st.session_state.missing_hours_dismissed = True
             st.rerun()
 
 master_df = st.session_state.master_df
 
-st.subheader("Vista dipendenti — ordini e anomalie")
+st.subheader(i18n.t(lang, "subheader_employee_view"))
 
 col_t1, col_t2 = st.columns(2)
 with col_t1:
-    show_only_anomalies = st.toggle("Mostra solo anomalie", value=True)
+    show_only_anomalies = st.toggle(i18n.t(lang, "toggle_show_only_anomalies"), value=True)
 with col_t2:
-    waive_intern_hours = st.toggle(
-        "Abbona di default ore insufficienti praticanti (.intern@e80group.com)", value=True
-    )
+    waive_intern_hours = st.toggle(i18n.t(lang, "toggle_waive_intern_hours"), value=True)
 
 # Le forzature esplicite (st.session_state.overrides) restano quelle salvate
 # dall'utente con "Applica forzature". L'abbono praticanti è un layer separato,
@@ -171,15 +162,15 @@ edit_df = apply_overrides(master_df, combined_overrides, drop_fully_cancelled=Fa
 # Vista effettiva per recap ed export: le righe senza più alcun ordine sono escluse.
 effective_df = apply_overrides(master_df, combined_overrides, drop_fully_cancelled=True)
 
-with st.expander("Filtri"):
+with st.expander(i18n.t(lang, "expander_filters")):
     col_f1, col_f2 = st.columns(2)
     with col_f1:
-        search_employee = st.text_input("Cerca dipendente (ID o nome)", value="")
+        search_employee = st.text_input(i18n.t(lang, "label_search_employee"), value="")
     with col_f2:
         first_day = date(year, month, 1)
         last_day = date(year, month, calendar.monthrange(year, month)[1])
         date_range = st.date_input(
-            "Intervallo date", value=(first_day, last_day),
+            i18n.t(lang, "label_date_range"), value=(first_day, last_day),
             min_value=first_day, max_value=last_day,
         )
 
@@ -187,8 +178,8 @@ view = edit_df.copy()
 view["Anomalia"] = view.apply(
     lambda r: ", ".join(
         filter(None, [
-            ANOMALY_DOUBLE_LABEL if r["anomaly_double"] else None,
-            ANOMALY_HOURS_LABEL if r["anomaly_hours"] else None,
+            i18n.t(lang, "anomaly_double") if r["anomaly_double"] else None,
+            i18n.t(lang, "anomaly_hours") if r["anomaly_hours"] else None,
         ])
     ),
     axis=1,
@@ -216,7 +207,7 @@ elif isinstance(date_range, tuple) and len(date_range) == 1:
 elif isinstance(date_range, date):
     view = view[view["date"] == date_range]
 
-st.caption(f"{len(view)} righe mostrate su {n_total} totali.")
+st.caption(i18n.t(lang, "caption_rows_shown", n=len(view), m=n_total))
 
 view["Rimuovi Amati"] = view.apply(lambda r: bool(combined_overrides.get((r["employee_id"], r["date"]), {}).get("remove_amati")), axis=1)
 view["Rimuovi Zippi"] = view.apply(lambda r: bool(combined_overrides.get((r["employee_id"], r["date"]), {}).get("remove_zippi")), axis=1)
@@ -229,15 +220,18 @@ display_cols = [
 edited = st.data_editor(
     view[display_cols],
     column_config={
-        "employee_id": st.column_config.TextColumn("ID Dipendente", disabled=True),
-        "nombre": st.column_config.TextColumn("Nome", disabled=True),
-        "email": st.column_config.TextColumn("Email", disabled=True),
-        "date": st.column_config.DateColumn("Data", disabled=True),
-        "amati": st.column_config.CheckboxColumn("Amati", disabled=True),
-        "zippi": st.column_config.CheckboxColumn("Zippi", disabled=True),
-        "hours": st.column_config.NumberColumn("Ore", disabled=True, format="%.1f"),
-        "eligible": st.column_config.CheckboxColumn("Diritto (>=6h)", disabled=True),
-        "Anomalia": st.column_config.TextColumn("Anomalia", disabled=True),
+        "employee_id": st.column_config.TextColumn(i18n.t(lang, "col_employee_id"), disabled=True),
+        "nombre": st.column_config.TextColumn(i18n.t(lang, "col_name"), disabled=True),
+        "email": st.column_config.TextColumn(i18n.t(lang, "col_email"), disabled=True),
+        "date": st.column_config.DateColumn(i18n.t(lang, "col_date"), disabled=True),
+        "amati": st.column_config.CheckboxColumn(i18n.t(lang, "col_amati"), disabled=True),
+        "zippi": st.column_config.CheckboxColumn(i18n.t(lang, "col_zippi"), disabled=True),
+        "hours": st.column_config.NumberColumn(i18n.t(lang, "col_hours"), disabled=True, format="%.1f"),
+        "eligible": st.column_config.CheckboxColumn(i18n.t(lang, "col_eligible"), disabled=True),
+        "Anomalia": st.column_config.TextColumn(i18n.t(lang, "col_anomaly"), disabled=True),
+        "Rimuovi Amati": st.column_config.CheckboxColumn(i18n.t(lang, "col_remove_amati")),
+        "Rimuovi Zippi": st.column_config.CheckboxColumn(i18n.t(lang, "col_remove_zippi")),
+        "Abbona vincolo ore": st.column_config.CheckboxColumn(i18n.t(lang, "col_waive_hours")),
     },
     disabled=False,
     hide_index=True,
@@ -245,7 +239,7 @@ edited = st.data_editor(
     key="employee_editor",
 )
 
-if st.button("Applica forzature"):
+if st.button(i18n.t(lang, "button_apply_overrides")):
     new_overrides = dict(st.session_state.overrides)
     for _, r in edited.iterrows():
         key = (r["employee_id"], r["date"])
@@ -266,27 +260,27 @@ if st.button("Applica forzature"):
     st.session_state.overrides = new_overrides
     st.rerun()
 
-st.subheader("Vista fornitori — validazione fatture")
-st.caption("Conteggio pasti forniti")
+st.subheader(i18n.t(lang, "subheader_supplier_view"))
+st.caption(i18n.t(lang, "caption_meal_count"))
 recap = supplier_recap(effective_df)
 
 kpi1, kpi2, kpi3 = st.columns(3)
 total_amati = int(recap["Amati"].sum()) if not recap.empty else 0
 total_zippi = int(recap["Zippi"].sum()) if not recap.empty else 0
-kpi1.metric("Totale pasti Amati", total_amati)
-kpi2.metric("Totale pasti Zippi", total_zippi)
-kpi3.metric("Totale pasti mese", total_amati + total_zippi)
+kpi1.metric(i18n.t(lang, "metric_total_amati"), total_amati)
+kpi2.metric(i18n.t(lang, "metric_total_zippi"), total_zippi)
+kpi3.metric(i18n.t(lang, "metric_total_month"), total_amati + total_zippi)
 
 st.dataframe(recap, hide_index=True, use_container_width=True)
 
-st.subheader("Export")
+st.subheader(i18n.t(lang, "subheader_export"))
 col1, col2 = st.columns(2)
 year_sel, month_sel = st.session_state.period
 
 with col1:
     reminder_bytes = build_reminder_export(effective_df)
     st.download_button(
-        "Scarica export solleciti (anomalie)",
+        i18n.t(lang, "button_export_reminders"),
         data=reminder_bytes,
         file_name=f"meal_anomalies_{year_sel}-{month_sel:02d}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -296,7 +290,7 @@ with col1:
 with col2:
     summary_bytes = build_summary_export(effective_df, year_sel, month_sel)
     st.download_button(
-        "Scarica riepilogo",
+        i18n.t(lang, "button_export_summary"),
         data=summary_bytes,
         file_name=f"meal_summary_{year_sel}-{month_sel:02d}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
