@@ -13,6 +13,7 @@ from business import ANOMALY_DOUBLE_LABEL, ANOMALY_HOURS_LABEL
 
 GREEN_FILL = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
 RED_FILL = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+GRAY_FILL = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")  # Bianco, Sfondo 1, Più scuro 15%
 HEADER_FONT = Font(bold=True)
 
 
@@ -46,22 +47,42 @@ def build_reminder_export(master_df: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
-def build_summary_export(master_df: pd.DataFrame, year: int, month: int) -> bytes:
-    """Righe = dipendenti (ID, nome), colonne = giorni del mese.
+TOTAL_COLUMN_HEADERS = [
+    "Totale", "Totale Amati", "Totale Zippi",
+    "# Anomalie Ore", "# Anomalie 2 pren",
+    "Costo Dipendente", "Nota",
+]
 
-    Cella = A / Z / AZ, colorata di verde se eligible quel giorno, rosso altrimenti.
+
+def build_summary_export(master_df: pd.DataFrame, year: int, month: int) -> bytes:
+    """Righe = dipendenti (ID, nome), colonne = giorni del mese + totali mensili.
+
+    Cella giorno = A / Z / AZ, colorata di verde se eligible quel giorno, rosso
+    altrimenti. Dopo le colonne giorno: totali per dipendente (pasti, Amati,
+    Zippi, anomalie, costo) e una colonna "Nota" vuota. In fondo, due righe di
+    totale giornaliero per fornitore (Amati, Zippi).
     """
     wb = Workbook()
     ws = wb.active
-    ws.title = "Riepilogo"
+    ws.title = f"{month:02d}-{year}"
 
     n_days = calendar.monthrange(year, month)[1]
     days = [date(year, month, d) for d in range(1, n_days + 1)]
+    first_total_col = 3 + len(days)
+    col_totale = first_total_col
+    col_totale_amati = first_total_col + 1
+    col_totale_zippi = first_total_col + 2
+    col_costo = first_total_col + TOTAL_COLUMN_HEADERS.index("Costo Dipendente")
+    weekend_col_idxs = {col_idx for col_idx, d in enumerate(days, start=3) if d.weekday() >= 5}
 
-    ws.append(["ID Dipendente", "Nome"] + [d.strftime("%d/%m (%a)") for d in days])
+    ws.append(
+        ["ID Dipendente", "Nome"] + [d.strftime("%d/%m (%a)") for d in days] + TOTAL_COLUMN_HEADERS
+    )
     for cell in ws[1]:
         cell.font = HEADER_FONT
         cell.alignment = Alignment(horizontal="center")
+    for col_idx in weekend_col_idxs:
+        ws.cell(row=1, column=col_idx).fill = GRAY_FILL
 
     employees = (
         master_df[["employee_id", "nombre"]]
@@ -77,29 +98,84 @@ def build_summary_export(master_df: pd.DataFrame, year: int, month: int) -> byte
 
     for emp in employees:
         emp_id = emp["employee_id"]
-        line = [emp_id, emp["nombre"]]
+        emp_rows = master_df[master_df["employee_id"] == emp_id]
+        totale_amati = int(emp_rows["amati"].sum())
+        totale_zippi = int(emp_rows["zippi"].sum())
+        costo_dipendente = emp_rows["cost_amati"].sum(skipna=True) + emp_rows["cost_zippi"].sum(skipna=True)
+
+        line = [emp_id, emp["nombre"]] + [None] * len(days) + [
+            totale_amati + totale_zippi,
+            totale_amati,
+            totale_zippi,
+            int(emp_rows["anomaly_hours"].sum()),
+            int(emp_rows["anomaly_double"].sum()),
+            round(float(costo_dipendente), 2),
+            None,
+        ]
         ws.append(line)
         excel_row = ws.max_row
+        ws.cell(row=excel_row, column=col_costo).number_format = '"$"#,##0.00'
         for col_idx, d in enumerate(days, start=3):
             row = lookup.get((emp_id, d))
-            if row is None:
-                continue
-            if row["amati"] and row["zippi"]:
-                value = "AZ"
-            elif row["amati"]:
-                value = "A"
-            elif row["zippi"]:
-                value = "Z"
-            else:
+            value = None
+            if row is not None:
+                if row["amati"] and row["zippi"]:
+                    value = "AZ"
+                elif row["amati"]:
+                    value = "A"
+                elif row["zippi"]:
+                    value = "Z"
+            is_weekend = col_idx in weekend_col_idxs
+            if value is None and not is_weekend:
                 continue
             cell = ws.cell(row=excel_row, column=col_idx, value=value)
-            cell.fill = GREEN_FILL if row["eligible"] else RED_FILL
+            if value is not None:
+                cell.fill = GREEN_FILL if row["eligible"] else RED_FILL
+            elif is_weekend:
+                cell.fill = GRAY_FILL
             cell.alignment = Alignment(horizontal="center")
+
+    # Riga vuota di separazione: sotto "Totale" riporta il gran totale pasti
+    # mese (Amati+Zippi), una riga sopra le due righe di totale per fornitore.
+    last_employee_row = ws.max_row
+    ws.append([])
+    spacer_row = last_employee_row + 1  # ws.max_row non avanza su un append([]) vuoto
+    daily_amati = master_df.groupby("date")["amati"].sum()
+    daily_zippi = master_df.groupby("date")["zippi"].sum()
+    grand_amati = int(daily_amati.sum())
+    grand_zippi = int(daily_zippi.sum())
+    ws.cell(row=spacer_row, column=col_totale, value=grand_amati + grand_zippi).font = HEADER_FONT
+
+    ws.append([None, "Totale Amati"])
+    total_amati_row = ws.max_row
+    for col_idx, d in enumerate(days, start=3):
+        cell = ws.cell(row=total_amati_row, column=col_idx, value=int(daily_amati.get(d, 0)))
+        if col_idx in weekend_col_idxs:
+            cell.fill = GRAY_FILL
+    # Intersezione riga/colonna Totale Amati = gran totale pasti Amati del mese.
+    ws.cell(row=total_amati_row, column=col_totale_amati, value=grand_amati)
+
+    ws.append([None, "Totale Zippi"])
+    total_zippi_row = ws.max_row
+    for col_idx, d in enumerate(days, start=3):
+        cell = ws.cell(row=total_zippi_row, column=col_idx, value=int(daily_zippi.get(d, 0)))
+        if col_idx in weekend_col_idxs:
+            cell.fill = GRAY_FILL
+    # Intersezione riga/colonna Totale Zippi = gran totale pasti Zippi del mese.
+    ws.cell(row=total_zippi_row, column=col_totale_zippi, value=grand_zippi)
+
+    for r in (total_amati_row, total_zippi_row):
+        ws.cell(row=r, column=2).font = HEADER_FONT
+    ws.cell(row=total_amati_row, column=col_totale_amati).font = HEADER_FONT
+    ws.cell(row=total_zippi_row, column=col_totale_zippi).font = HEADER_FONT
 
     ws.column_dimensions["A"].width = 14
     ws.column_dimensions["B"].width = 28
     for col_idx in range(3, 3 + len(days)):
         ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = 10
+    for col_idx in range(first_total_col, first_total_col + len(TOTAL_COLUMN_HEADERS)):
+        header_len = len(ws.cell(row=1, column=col_idx).value)
+        ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = max(12, header_len + 2)
     ws.freeze_panes = "C2"
 
     buf = BytesIO()
