@@ -14,6 +14,12 @@ COST_HIGH = 165.0
 ANOMALY_DOUBLE_LABEL = "Doppia prenotazione"
 ANOMALY_HOURS_LABEL = "Ore ufficio insufficienti"
 
+# Gli export Excel usano sempre inglese (lingua neutra), indipendentemente
+# dalla lingua dell'interfaccia — così eventuali automazioni a valle (es.
+# Power Automate) non dipendono dalla lingua scelta a video.
+ANOMALY_DOUBLE_LABEL_EXPORT = "Double Booking"
+ANOMALY_HOURS_LABEL_EXPORT = "Insufficient Office Hours"
+
 INTERN_EMAIL_SUFFIX = ".intern@e80group.com"
 
 
@@ -193,13 +199,6 @@ def apply_overrides(
         force_eligible = force_eligible[keep_mask].reset_index(drop=True)
 
     return _compute_costs_anomalies(df, force_eligible=force_eligible)
-
-
-def check_weekend_activity(master_df: pd.DataFrame) -> list[str]:
-    weekend = master_df[~_is_weekday(master_df["date"])]
-    if weekend.empty:
-        return []
-    return [f"Trovati {len(weekend)} ordini registrati nel weekend (sabato/domenica), inattesi."]
 
 
 def supplier_recap(master_df: pd.DataFrame) -> pd.DataFrame:

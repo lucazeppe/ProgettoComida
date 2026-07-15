@@ -12,7 +12,6 @@ from business import (
     ANOMALY_HOURS_LABEL,
     apply_overrides,
     build_master,
-    check_weekend_activity,
     is_intern,
     supplier_recap,
 )
@@ -77,13 +76,13 @@ if process:
         st.error(str(e))
         st.stop()
 
-    if exclude_weekends:
-        all_warnings += check_weekend_activity(master_df)
-
     # Dipendenti con almeno un ordine ma assenti dal file ore: trattati come 0
     # ore (quindi anomalia su tutti i loro ordini) senza bloccare il
     # processamento, ma segnalati con un avviso dedicato e richiudibile.
-    ordering_ids = set(zippi_df["employee_id"]) | set(amati_df["employee_id"])
+    # Calcolato su master_df (post exclude_weekends) e non sui file grezzi:
+    # un ordine di sabato/domenica escluso dal calcolo non deve generare un
+    # falso avviso su un dipendente il cui unico ordine non viene mai processato.
+    ordering_ids = set(master_df.loc[master_df["amati"] | master_df["zippi"], "employee_id"])
     hours_ids = set(hours_df["employee_id"])
     missing_ids = sorted(ordering_ids - hours_ids)
     missing_employees = []
@@ -152,6 +151,7 @@ with col_t2:
 # solo per il calcolo di viste/export, senza scriverle in session_state (così
 # disattivare il toggle annulla subito l'effetto, senza lasciare residui).
 combined_overrides = dict(st.session_state.overrides)
+auto_waived_keys: set[tuple[str, date]] = set()
 if waive_intern_hours:
     base_eff = apply_overrides(master_df, st.session_state.overrides, drop_fully_cancelled=False)
     intern_hours_anomaly = base_eff.apply(
@@ -159,6 +159,8 @@ if waive_intern_hours:
     )
     for _, r in base_eff[intern_hours_anomaly].iterrows():
         key = (r["employee_id"], r["date"])
+        if key not in st.session_state.overrides:
+            auto_waived_keys.add(key)
         ov = dict(combined_overrides.get(key, {}))
         ov["waive_hours"] = True
         combined_overrides[key] = ov
@@ -208,14 +210,17 @@ if search_employee.strip():
 if isinstance(date_range, tuple) and len(date_range) == 2:
     d_from, d_to = date_range
     view = view[(view["date"] >= d_from) & (view["date"] <= d_to)]
+elif isinstance(date_range, tuple) and len(date_range) == 1:
+    # Range parzialmente selezionato (solo data di inizio): filtra da lì in poi.
+    view = view[view["date"] >= date_range[0]]
 elif isinstance(date_range, date):
     view = view[view["date"] == date_range]
 
 st.caption(f"{len(view)} righe mostrate su {n_total} totali.")
 
-view["Rimuovi Amati"] = view.apply(lambda r: bool(st.session_state.overrides.get((r["employee_id"], r["date"]), {}).get("remove_amati")), axis=1)
-view["Rimuovi Zippi"] = view.apply(lambda r: bool(st.session_state.overrides.get((r["employee_id"], r["date"]), {}).get("remove_zippi")), axis=1)
-view["Abbona vincolo ore"] = view.apply(lambda r: bool(st.session_state.overrides.get((r["employee_id"], r["date"]), {}).get("waive_hours")), axis=1)
+view["Rimuovi Amati"] = view.apply(lambda r: bool(combined_overrides.get((r["employee_id"], r["date"]), {}).get("remove_amati")), axis=1)
+view["Rimuovi Zippi"] = view.apply(lambda r: bool(combined_overrides.get((r["employee_id"], r["date"]), {}).get("remove_zippi")), axis=1)
+view["Abbona vincolo ore"] = view.apply(lambda r: bool(combined_overrides.get((r["employee_id"], r["date"]), {}).get("waive_hours")), axis=1)
 
 display_cols = [
     "employee_id", "nombre", "email", "date", "amati", "zippi", "hours",
@@ -249,6 +254,11 @@ if st.button("Applica forzature"):
             "remove_zippi": bool(r["Rimuovi Zippi"]),
             "waive_hours": bool(r["Abbona vincolo ore"]),
         }
+        # Una riga abbonata solo dal toggle praticanti (non toccata dall'utente)
+        # non va resa una forzatura esplicita permanente: deve restare governata
+        # dal toggle, altrimenti disattivarlo in seguito non avrebbe più effetto.
+        if key in auto_waived_keys and ov == {"remove_amati": False, "remove_zippi": False, "waive_hours": True}:
+            continue
         if any(ov.values()):
             new_overrides[key] = ov
         else:
@@ -278,7 +288,7 @@ with col1:
     st.download_button(
         "Scarica export solleciti (anomalie)",
         data=reminder_bytes,
-        file_name=f"anomalie_pasti_{year_sel}-{month_sel:02d}.xlsx",
+        file_name=f"meal_anomalies_{year_sel}-{month_sel:02d}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
@@ -288,7 +298,7 @@ with col2:
     st.download_button(
         "Scarica riepilogo",
         data=summary_bytes,
-        file_name=f"riepilogo_pasti_{year_sel}-{month_sel:02d}.xlsx",
+        file_name=f"meal_summary_{year_sel}-{month_sel:02d}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )

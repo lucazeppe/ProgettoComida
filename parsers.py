@@ -22,8 +22,12 @@ ID_COLUMN_CANDIDATES = ID_COLUMN_CANDIDATES_PRIORITY + ID_COLUMN_CANDIDATES_FALL
 
 
 def title_case(s: str) -> str:
-    """Ogni parola con sola iniziale maiuscola (gestisce nomi/cognomi con più parole)."""
-    return " ".join(w[:1].upper() + w[1:].lower() for w in s.split() if w)
+    """Ogni parola con sola iniziale maiuscola (gestisce nomi/cognomi con più parole,
+    e trattini/apostrofi come separatori, es. "GARCIA-LOPEZ" -> "Garcia-Lopez")."""
+    def _cap_word(w: str) -> str:
+        parts = re.split(r"([-'])", w)
+        return "".join(p if p in ("-", "'") else (p[:1].upper() + p[1:].lower()) for p in parts)
+    return " ".join(_cap_word(w) for w in s.split() if w)
 
 
 def _normalize_id(value) -> str | None:
@@ -191,6 +195,21 @@ def parse_amati(file, year: int, month: int) -> tuple[pd.DataFrame, list[str]]:
             f"File Amati: trovati {len(sheet_names)} fogli ma il mese {year}-{month:02d} "
             f"ha {len(padded_weeks)} settimane lavorative attese. Verifica il file/mese scelto."
         )
+
+    # I fogli vengono abbinati alle settimane in base al solo ordine delle tab
+    # nel file. Se il nome del foglio contiene un numero (es. "Hoja 3"), verifica
+    # che sia crescente nell'ordine delle tab: altrimenti avvisa (non blocca),
+    # perché uno scambio di tab produrrebbe un'attribuzione settimana errata
+    # senza nessun altro segnale visibile.
+    sheet_numbers = [re.search(r"\d+", name) for name in sheet_names]
+    if all(sheet_numbers):
+        numbers = [int(m.group()) for m in sheet_numbers]
+        if numbers != sorted(numbers):
+            warnings.append(
+                f"File Amati: i fogli non sembrano in ordine cronologico in base al numero "
+                f"nel nome ({', '.join(sheet_names)}). Le settimane potrebbero essere "
+                "attribuite ai fogli sbagliati: verifica l'ordine delle schede nel file."
+            )
 
     records = []
     for sheet_name, week_slots in zip(sheet_names, padded_weeks):

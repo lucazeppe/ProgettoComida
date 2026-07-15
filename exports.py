@@ -9,7 +9,7 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from business import ANOMALY_DOUBLE_LABEL, ANOMALY_HOURS_LABEL
+from business import ANOMALY_DOUBLE_LABEL_EXPORT, ANOMALY_HOURS_LABEL_EXPORT
 
 GREEN_FILL = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
 RED_FILL = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
@@ -25,8 +25,8 @@ def build_reminder_export(master_df: pd.DataFrame) -> bytes:
     """
     wb = Workbook()
     ws = wb.active
-    ws.title = "Anomalie"
-    headers = ["ID Dipendente", "Nome", "Email", "Giorno anomalia", "Ragione anomalia"]
+    ws.title = "Anomalies"
+    headers = ["Employee ID", "Name", "Email", "Anomaly Date", "Anomaly Reason"]
     ws.append(headers)
     for cell in ws[1]:
         cell.font = HEADER_FONT
@@ -34,9 +34,9 @@ def build_reminder_export(master_df: pd.DataFrame) -> bytes:
     for _, row in master_df.sort_values(["employee_id", "date"]).iterrows():
         email = row["email"] if pd.notna(row["email"]) else ""
         if row["anomaly_double"]:
-            ws.append([row["employee_id"], row["nombre"], email, row["date"], ANOMALY_DOUBLE_LABEL])
+            ws.append([row["employee_id"], row["nombre"], email, row["date"], ANOMALY_DOUBLE_LABEL_EXPORT])
         if row["anomaly_hours"]:
-            ws.append([row["employee_id"], row["nombre"], email, row["date"], ANOMALY_HOURS_LABEL])
+            ws.append([row["employee_id"], row["nombre"], email, row["date"], ANOMALY_HOURS_LABEL_EXPORT])
 
     for col_cells in ws.columns:
         max_len = max((len(str(c.value)) if c.value is not None else 0) for c in col_cells)
@@ -48,9 +48,9 @@ def build_reminder_export(master_df: pd.DataFrame) -> bytes:
 
 
 TOTAL_COLUMN_HEADERS = [
-    "Totale", "Totale Amati", "Totale Zippi",
-    "# Anomalie Ore", "# Anomalie 2 pren",
-    "Costo Dipendente", "Nota",
+    "Total", "Total Amati", "Total Zippi",
+    "# Hours Anomalies", "# Double-Booking Anomalies",
+    "Employee Cost", "Note",
 ]
 
 
@@ -72,11 +72,11 @@ def build_summary_export(master_df: pd.DataFrame, year: int, month: int) -> byte
     col_totale = first_total_col
     col_totale_amati = first_total_col + 1
     col_totale_zippi = first_total_col + 2
-    col_costo = first_total_col + TOTAL_COLUMN_HEADERS.index("Costo Dipendente")
+    col_costo = first_total_col + TOTAL_COLUMN_HEADERS.index("Employee Cost")
     weekend_col_idxs = {col_idx for col_idx, d in enumerate(days, start=3) if d.weekday() >= 5}
 
     ws.append(
-        ["ID Dipendente", "Nome"] + [d.strftime("%d/%m (%a)") for d in days] + TOTAL_COLUMN_HEADERS
+        ["Employee ID", "Name"] + [d.strftime("%d/%m (%a)") for d in days] + TOTAL_COLUMN_HEADERS
     )
     for cell in ws[1]:
         cell.font = HEADER_FONT
@@ -146,7 +146,7 @@ def build_summary_export(master_df: pd.DataFrame, year: int, month: int) -> byte
     grand_zippi = int(daily_zippi.sum())
     ws.cell(row=spacer_row, column=col_totale, value=grand_amati + grand_zippi).font = HEADER_FONT
 
-    ws.append([None, "Totale Amati"])
+    ws.append([None, "Total Amati"])
     total_amati_row = ws.max_row
     for col_idx, d in enumerate(days, start=3):
         cell = ws.cell(row=total_amati_row, column=col_idx, value=int(daily_amati.get(d, 0)))
@@ -155,7 +155,7 @@ def build_summary_export(master_df: pd.DataFrame, year: int, month: int) -> byte
     # Intersezione riga/colonna Totale Amati = gran totale pasti Amati del mese.
     ws.cell(row=total_amati_row, column=col_totale_amati, value=grand_amati)
 
-    ws.append([None, "Totale Zippi"])
+    ws.append([None, "Total Zippi"])
     total_zippi_row = ws.max_row
     for col_idx, d in enumerate(days, start=3):
         cell = ws.cell(row=total_zippi_row, column=col_idx, value=int(daily_zippi.get(d, 0)))
