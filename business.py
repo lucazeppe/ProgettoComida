@@ -5,12 +5,20 @@ from datetime import date
 
 import pandas as pd
 
+from parsers import title_case
+
 HOURS_THRESHOLD = 6
 COST_LOW = 23.46
 COST_HIGH = 165.0
 
 ANOMALY_DOUBLE_LABEL = "Doppia prenotazione"
 ANOMALY_HOURS_LABEL = "Ore ufficio insufficienti"
+
+INTERN_EMAIL_SUFFIX = ".intern@e80group.com"
+
+
+def is_intern(email) -> bool:
+    return isinstance(email, str) and email.strip().lower().endswith(INTERN_EMAIL_SUFFIX)
 
 MASTER_COLUMNS = [
     "employee_id", "nombre", "email", "date",
@@ -24,15 +32,15 @@ def _build_employee_registry(zippi_df: pd.DataFrame, amati_df: pd.DataFrame, hou
     records = {}
 
     for _, r in amati_df.iterrows():
-        full_name = f"{r['nombre']} {r['apellidos']}".strip()
+        full_name = title_case(f"{r['nombre']} {r['apellidos']}".strip())
         records.setdefault(r["employee_id"], {"nombre": full_name, "email": r["email"]})
 
     for _, r in zippi_df.iterrows():
-        entry = records.setdefault(r["employee_id"], {"nombre": r["nombre"], "email": r["email"]})
+        entry = records.setdefault(r["employee_id"], {"nombre": title_case(r["nombre"]), "email": r["email"]})
         if not entry.get("email"):
             entry["email"] = r["email"]
         if not entry.get("nombre"):
-            entry["nombre"] = r["nombre"]
+            entry["nombre"] = title_case(r["nombre"])
 
     for emp_id in hours_df["employee_id"].unique():
         records.setdefault(emp_id, {"nombre": None, "email": None})
@@ -76,6 +84,9 @@ def build_master(
         amati_df = amati_df[_is_weekday(amati_df["date"])]
         hours_df = hours_df[_is_weekday(hours_df["date"])]
 
+    # Un dipendente con ordine ma assente dal file ore non genera più errore:
+    # viene trattato come 0 ore quel giorno (quindi anomalia "ore insufficienti"
+    # su tutti i suoi ordini), esattamente come un giorno con ore=0 registrate.
     zippi_orders = zippi_df[["employee_id", "date"]].drop_duplicates().assign(zippi=True)
     amati_orders = amati_df[["employee_id", "date"]].drop_duplicates().assign(amati=True)
 
@@ -87,10 +98,27 @@ def build_master(
     orders["zippi"] = orders["zippi"].fillna(False)
     orders["amati"] = orders["amati"].fillna(False)
 
-    orders = orders.merge(hours_df, on=["employee_id", "date"], how="left")
+    orders = orders.merge(hours_df[["employee_id", "date", "hours"]], on=["employee_id", "date"], how="left")
     orders["hours"] = orders["hours"].fillna(0.0)
 
+    # Nome/Cognome dal file ore: attributo per dipendente (non per singolo
+    # giorno), così resta lo stesso su tutte le righe anche se un giorno
+    # specifico non ha un corrispettivo nel file ore.
+    hours_names = (
+        hours_df[["employee_id", "nombre_ore"]]
+        .dropna(subset=["nombre_ore"])
+        .drop_duplicates(subset=["employee_id"])
+    )
+    orders = orders.merge(hours_names, on="employee_id", how="left")
+    orders["nombre_ore"] = orders["nombre_ore"].fillna("")
+
     orders = orders.merge(registry, on="employee_id", how="left")
+
+    # Nome dipendente uniforme ovunque nell'app: il file ore è la fonte più
+    # affidabile (Nome/Cognome dedicati), quindi ha priorità; solo se assente
+    # (dipendente non presente nel file ore) si usa il nome da Amati/Zippi.
+    orders["nombre"] = orders["nombre_ore"].where(orders["nombre_ore"].astype(bool), orders["nombre"])
+    orders = orders.drop(columns=["nombre_ore"])
 
     orders = _compute_costs_anomalies(orders)
 

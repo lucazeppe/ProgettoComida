@@ -21,6 +21,11 @@ ID_COLUMN_CANDIDATES_FALLBACK = ["dipendente", "empleado", "numero de empleado",
 ID_COLUMN_CANDIDATES = ID_COLUMN_CANDIDATES_PRIORITY + ID_COLUMN_CANDIDATES_FALLBACK
 
 
+def title_case(s: str) -> str:
+    """Ogni parola con sola iniziale maiuscola (gestisce nomi/cognomi con più parole)."""
+    return " ".join(w[:1].upper() + w[1:].lower() for w in s.split() if w)
+
+
 def _normalize_id(value) -> str | None:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
@@ -281,6 +286,12 @@ def parse_hours(file, year: int, month: int, warn_weekends: bool = True) -> tupl
             f"(cercate: {ID_COLUMN_CANDIDATES}) nelle prime righe del file."
         )
 
+    # Nome/Cognome (se presenti) sono nella stessa riga della colonna ID.
+    id_header_row = [c.value for c in ws[id_row_idx]]
+    lower_id_header_row = [str(v).strip().lower() if v else "" for v in id_header_row]
+    nome_col_idx = lower_id_header_row.index("nome") if "nome" in lower_id_header_row else None
+    cognome_col_idx = lower_id_header_row.index("cognome") if "cognome" in lower_id_header_row else None
+
     date_row_idx = None
     best_count = 0
     for i in range(1, 11):
@@ -320,7 +331,8 @@ def parse_hours(file, year: int, month: int, warn_weekends: bool = True) -> tupl
         )
 
     records = []
-    bad_ids = []
+    seen_ids = set()
+    duplicate_ids = set()
     for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
         if row[id_col_idx] is None:
             continue
@@ -328,8 +340,25 @@ def parse_hours(file, year: int, month: int, warn_weekends: bool = True) -> tupl
         if emp_id is None:
             continue
         if not re.fullmatch(r"\d{4,10}", emp_id):
-            bad_ids.append(emp_id)
+            # Formato ID non riconosciuto: riga ignorata silenziosamente (il file
+            # ore è di supporto, non blocca il processamento). L'unico errore
+            # bloccante legato all'ID è a valle: un dipendente con ordine ma
+            # nessuna corrispondenza nel file ore (vedi business.build_master).
             continue
+        if emp_id in seen_ids:
+            duplicate_ids.add(emp_id)
+        seen_ids.add(emp_id)
+
+        nombre_ore = None
+        if nome_col_idx is not None or cognome_col_idx is not None:
+            nome_val = row[nome_col_idx] if nome_col_idx is not None and nome_col_idx < len(row) else None
+            cognome_val = row[cognome_col_idx] if cognome_col_idx is not None and cognome_col_idx < len(row) else None
+            parts = [
+                title_case(str(v).strip()) for v in (nome_val, cognome_val)
+                if v is not None and str(v).strip() != ""
+            ]
+            nombre_ore = " ".join(parts) if parts else None
+
         for j, d in date_cols.items():
             raw_hours = row[j] if j < len(row) else None
             try:
@@ -339,15 +368,16 @@ def parse_hours(file, year: int, month: int, warn_weekends: bool = True) -> tupl
                     f"File Ore: valore ore non riconosciuto ('{raw_hours}') per il dipendente "
                     f"{emp_id} il {d.isoformat()}. Atteso un numero (es. 8 o 8,5)."
                 )
-            records.append({"employee_id": emp_id, "date": d, "hours": hours})
+            records.append({"employee_id": emp_id, "date": d, "hours": hours, "nombre_ore": nombre_ore})
 
-    if bad_ids:
+    if duplicate_ids:
+        examples = ", ".join(sorted(duplicate_ids)[:10])
         raise ValueError(
-            "File Ore: formato ID dipendente non riconosciuto (atteso numerico 2000xxx), "
-            f"trovati es: {bad_ids[:5]}. Verifica di aver caricato l'export ore con ID aziendale corretto."
+            f"File Ore: trovati ID dipendente duplicati (righe diverse per lo stesso ID): "
+            f"{examples}. Verifica il file, ogni dipendente deve avere una sola riga."
         )
 
-    df = pd.DataFrame(records, columns=["employee_id", "date", "hours"])
+    df = pd.DataFrame(records, columns=["employee_id", "date", "hours", "nombre_ore"])
 
     if warn_weekends:
         weekend_rows = df[(df["hours"] > 0) & (df["date"].apply(lambda d: d.weekday() >= 5))]

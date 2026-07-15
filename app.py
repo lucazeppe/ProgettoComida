@@ -13,6 +13,7 @@ from business import (
     apply_overrides,
     build_master,
     check_weekend_activity,
+    is_intern,
     supplier_recap,
 )
 from exports import build_reminder_export, build_summary_export
@@ -33,6 +34,10 @@ if "warnings" not in st.session_state:
     st.session_state.warnings = []
 if "period" not in st.session_state:
     st.session_state.period = None
+if "missing_hours_employees" not in st.session_state:
+    st.session_state.missing_hours_employees = []
+if "missing_hours_dismissed" not in st.session_state:
+    st.session_state.missing_hours_dismissed = False
 
 st.title("Controllo Pasti Aziendali — Amati / Zippi")
 
@@ -67,18 +72,34 @@ if process:
         all_warnings += w
         hours_df, w = parse_hours(hours_file, year, month, warn_weekends=exclude_weekends)
         all_warnings += w
+        master_df = build_master(zippi_df, amati_df, hours_df, year, month, exclude_weekends=exclude_weekends)
     except ValueError as e:
         st.error(str(e))
         st.stop()
 
-    master_df = build_master(zippi_df, amati_df, hours_df, year, month, exclude_weekends=exclude_weekends)
     if exclude_weekends:
         all_warnings += check_weekend_activity(master_df)
+
+    # Dipendenti con almeno un ordine ma assenti dal file ore: trattati come 0
+    # ore (quindi anomalia su tutti i loro ordini) senza bloccare il
+    # processamento, ma segnalati con un avviso dedicato e richiudibile.
+    ordering_ids = set(zippi_df["employee_id"]) | set(amati_df["employee_id"])
+    hours_ids = set(hours_df["employee_id"])
+    missing_ids = sorted(ordering_ids - hours_ids)
+    missing_employees = []
+    for emp_id in missing_ids:
+        row = master_df.loc[master_df["employee_id"] == emp_id]
+        nombre = row["nombre"].iloc[0] if not row.empty and row["nombre"].iloc[0] else ""
+        email = row["email"].iloc[0] if not row.empty else None
+        label = f"{emp_id} ({nombre})" if nombre else emp_id
+        missing_employees.append({"label": label, "is_intern": is_intern(email)})
 
     st.session_state.master_df = master_df
     st.session_state.overrides = {}
     st.session_state.warnings = all_warnings
     st.session_state.period = (year, month)
+    st.session_state.missing_hours_employees = missing_employees
+    st.session_state.missing_hours_dismissed = False
 
 if st.session_state.master_df is None:
     st.info("Carica i 3 file e premi **Processa** per iniziare.")
@@ -87,16 +108,66 @@ if st.session_state.master_df is None:
 for w in st.session_state.warnings:
     st.warning(w)
 
+if st.session_state.missing_hours_employees and not st.session_state.missing_hours_dismissed:
+    col_w1, col_w2 = st.columns([12, 1])
+    with col_w1:
+        missing = st.session_state.missing_hours_employees
+        n_interns = sum(1 for m in missing if m["is_intern"])
+        n_regular = len(missing) - n_interns
+
+        subject_parts = []
+        if n_interns:
+            subject_parts.append(f"{n_interns} praticante" if n_interns == 1 else f"{n_interns} praticanti")
+        if n_regular:
+            subject_parts.append(f"{n_regular} dipendente" if n_regular == 1 else f"{n_regular} dipendenti")
+        subject = " e ".join(subject_parts)
+        verb = "ha" if len(missing) == 1 else "hanno"
+
+        names = ", ".join(m["label"] for m in missing[:10])
+        more = f" e altri {len(missing) - 10}" if len(missing) > 10 else ""
+        st.warning(
+            f"{subject} {verb} ordini ma non risultano nel file ore "
+            f"(trattati come 0 ore, quindi anomalia su tutti i loro ordini): {names}{more}."
+        )
+    with col_w2:
+        if st.button("✕", key="dismiss_missing_hours", help="Chiudi avviso"):
+            st.session_state.missing_hours_dismissed = True
+            st.rerun()
+
 master_df = st.session_state.master_df
-# Vista editabile: non esclude le righe annullate da entrambi i fornitori, così
-# restano visibili/correggibili finché non si riprocessa da capo.
-edit_df = apply_overrides(master_df, st.session_state.overrides, drop_fully_cancelled=False)
-# Vista effettiva per recap ed export: le righe senza più alcun ordine sono escluse.
-effective_df = apply_overrides(master_df, st.session_state.overrides, drop_fully_cancelled=True)
 
 st.subheader("Vista dipendenti — ordini e anomalie")
 
-show_only_anomalies = st.toggle("Mostra solo anomalie", value=False)
+col_t1, col_t2 = st.columns(2)
+with col_t1:
+    show_only_anomalies = st.toggle("Mostra solo anomalie", value=True)
+with col_t2:
+    waive_intern_hours = st.toggle(
+        "Abbona di default ore insufficienti praticanti (.intern@e80group.com)", value=True
+    )
+
+# Le forzature esplicite (st.session_state.overrides) restano quelle salvate
+# dall'utente con "Applica forzature". L'abbono praticanti è un layer separato,
+# calcolato ad ogni render in base al toggle: si somma alle forzature esplicite
+# solo per il calcolo di viste/export, senza scriverle in session_state (così
+# disattivare il toggle annulla subito l'effetto, senza lasciare residui).
+combined_overrides = dict(st.session_state.overrides)
+if waive_intern_hours:
+    base_eff = apply_overrides(master_df, st.session_state.overrides, drop_fully_cancelled=False)
+    intern_hours_anomaly = base_eff.apply(
+        lambda r: is_intern(r["email"]) and r["anomaly_hours"], axis=1
+    )
+    for _, r in base_eff[intern_hours_anomaly].iterrows():
+        key = (r["employee_id"], r["date"])
+        ov = dict(combined_overrides.get(key, {}))
+        ov["waive_hours"] = True
+        combined_overrides[key] = ov
+
+# Vista editabile: non esclude le righe annullate da entrambi i fornitori, così
+# restano visibili/correggibili finché non si riprocessa da capo.
+edit_df = apply_overrides(master_df, combined_overrides, drop_fully_cancelled=False)
+# Vista effettiva per recap ed export: le righe senza più alcun ordine sono escluse.
+effective_df = apply_overrides(master_df, combined_overrides, drop_fully_cancelled=True)
 
 with st.expander("Filtri"):
     col_f1, col_f2 = st.columns(2)
@@ -185,8 +256,8 @@ if st.button("Applica forzature"):
     st.session_state.overrides = new_overrides
     st.rerun()
 
-st.subheader("Recap fornitore — validazione fatture")
-st.caption("Conteggio pasti forniti (nessun importo: i costi 23,46/165 riguardano l'addebito al dipendente).")
+st.subheader("Vista fornitori — validazione fatture")
+st.caption("Conteggio pasti forniti")
 recap = supplier_recap(effective_df)
 
 kpi1, kpi2, kpi3 = st.columns(3)

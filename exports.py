@@ -65,7 +65,7 @@ def build_summary_export(master_df: pd.DataFrame, year: int, month: int) -> byte
 
     employees = (
         master_df[["employee_id", "nombre"]]
-        .drop_duplicates()
+        .drop_duplicates(subset=["employee_id"])
         .sort_values("nombre")
         .to_dict("records")
     )
