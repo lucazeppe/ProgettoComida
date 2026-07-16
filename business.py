@@ -7,7 +7,7 @@ import pandas as pd
 
 from parsers import title_case
 
-HOURS_THRESHOLD = 6
+HOURS_THRESHOLD = 4
 COST_LOW = 23.46
 COST_HIGH = 165.0
 
