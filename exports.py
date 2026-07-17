@@ -8,6 +8,7 @@ from io import BytesIO
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from business import ANOMALY_DOUBLE_LABEL_EXPORT, ANOMALY_HOURS_LABEL_EXPORT
 
@@ -41,6 +42,56 @@ def build_reminder_export(master_df: pd.DataFrame) -> bytes:
     for col_cells in ws.columns:
         max_len = max((len(str(c.value)) if c.value is not None else 0) for c in col_cells)
         ws.column_dimensions[col_cells[0].column_letter].width = max(12, min(40, max_len + 2))
+
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+MAIL_REMINDER_HEADERS = (
+    ["Employee ID", "Name", "Email", "Anomaly Hours", "Anomaly Booking", "Allegato", "NameAllegato"]
+    + [f"Att{i}" for i in range(1, 31)]
+)
+
+
+def build_mail_reminder_export(master_df: pd.DataFrame) -> bytes:
+    """Un record per dipendente con almeno un'anomalia, per il flusso Power
+    Automate di sollecito via mail. Le date di ciascun tipo di anomalia sono
+    elencate come lista testuale "GG/MM/AAAA, GG/MM/AAAA" nella stessa cella.
+    Il foglio è una vera Tabella Excel (non un semplice range), richiesto da
+    Power Automate per leggere correttamente i dati.
+
+    master_df deve essere già lo stato effettivo (dopo eventuali forzature).
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Emails"
+    ws.append(MAIL_REMINDER_HEADERS)
+
+    anomalies = master_df[master_df["anomaly_hours"] | master_df["anomaly_double"]]
+    for emp_id, group in anomalies.sort_values("date").groupby("employee_id", sort=False):
+        nombre = group["nombre"].iloc[0]
+        email = group["email"].iloc[0] if pd.notna(group["email"].iloc[0]) else ""
+        hours_dates = group.loc[group["anomaly_hours"], "date"].apply(lambda d: d.strftime("%d/%m/%Y"))
+        booking_dates = group.loc[group["anomaly_double"], "date"].apply(lambda d: d.strftime("%d/%m/%Y"))
+        ws.append([
+            emp_id, nombre, email,
+            ", ".join(hours_dates), ", ".join(booking_dates),
+            "N", None,
+        ] + [None] * 30)
+
+    last_row = max(ws.max_row, 1)
+    table = Table(displayName="Table1", ref=f"A1:AK{last_row}")
+    table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium9", showRowStripes=True)
+    ws.add_table(table)
+
+    for cell in ws[1]:
+        cell.font = HEADER_FONT
+    ws.column_dimensions["A"].width = 14
+    ws.column_dimensions["B"].width = 28
+    ws.column_dimensions["C"].width = 28
+    ws.column_dimensions["D"].width = 30
+    ws.column_dimensions["E"].width = 30
 
     buf = BytesIO()
     wb.save(buf)

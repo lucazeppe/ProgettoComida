@@ -14,7 +14,7 @@ from business import (
     is_intern,
     supplier_recap,
 )
-from exports import build_reminder_export, build_summary_export
+from exports import build_mail_reminder_export, build_reminder_export, build_summary_export
 from parsers import parse_amati, parse_hours, parse_zippi
 
 if "lang" not in st.session_state:
@@ -274,7 +274,7 @@ kpi3.metric(i18n.t(lang, "metric_total_month"), total_amati + total_zippi)
 st.dataframe(recap, hide_index=True, use_container_width=True)
 
 st.subheader(i18n.t(lang, "subheader_export"))
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 year_sel, month_sel = st.session_state.period
 
 with col1:
@@ -293,6 +293,16 @@ with col2:
         i18n.t(lang, "button_export_summary"),
         data=summary_bytes,
         file_name=f"meal_summary_{year_sel}-{month_sel:02d}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
+
+with col3:
+    mail_reminder_bytes = build_mail_reminder_export(effective_df)
+    st.download_button(
+        i18n.t(lang, "button_export_mail_reminder"),
+        data=mail_reminder_bytes,
+        file_name=f"mail_reminder_{year_sel}-{month_sel:02d}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
