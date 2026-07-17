@@ -8,6 +8,7 @@ from io import BytesIO
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from business import ANOMALY_DOUBLE_LABEL_EXPORT, ANOMALY_HOURS_LABEL_EXPORT
@@ -48,8 +49,10 @@ def build_reminder_export(master_df: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
+MAIL_REMINDER_OBJECT_VALUE = "Comida"
+
 MAIL_REMINDER_HEADERS = (
-    ["Employee ID", "Name", "Email", "Anomaly Hours", "Anomaly Booking", "Allegato", "NameAllegato"]
+    ["Employee ID", "Name", "Email", "Object", "Anomaly Hours", "Anomaly Booking", "Allegato", "NameAllegato"]
     + [f"Att{i}" for i in range(1, 31)]
 )
 
@@ -75,13 +78,14 @@ def build_mail_reminder_export(master_df: pd.DataFrame) -> bytes:
         hours_dates = group.loc[group["anomaly_hours"], "date"].apply(lambda d: d.strftime("%d/%m/%Y"))
         booking_dates = group.loc[group["anomaly_double"], "date"].apply(lambda d: d.strftime("%d/%m/%Y"))
         ws.append([
-            emp_id, nombre, email,
+            emp_id, nombre, email, MAIL_REMINDER_OBJECT_VALUE,
             ", ".join(hours_dates), ", ".join(booking_dates),
             "N", None,
         ] + [None] * 30)
 
     last_row = max(ws.max_row, 1)
-    table = Table(displayName="Table1", ref=f"A1:AK{last_row}")
+    last_col_letter = get_column_letter(len(MAIL_REMINDER_HEADERS))
+    table = Table(displayName="Table1", ref=f"A1:{last_col_letter}{last_row}")
     table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium9", showRowStripes=True)
     ws.add_table(table)
 
@@ -90,8 +94,9 @@ def build_mail_reminder_export(master_df: pd.DataFrame) -> bytes:
     ws.column_dimensions["A"].width = 14
     ws.column_dimensions["B"].width = 28
     ws.column_dimensions["C"].width = 28
-    ws.column_dimensions["D"].width = 30
+    ws.column_dimensions["D"].width = 12
     ws.column_dimensions["E"].width = 30
+    ws.column_dimensions["F"].width = 30
 
     buf = BytesIO()
     wb.save(buf)
