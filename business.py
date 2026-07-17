@@ -7,6 +7,8 @@ import pandas as pd
 
 from parsers import title_case
 
+# Soglia di ore stretta: diritto al pasto solo se le ore lavorate sono
+# STRETTAMENTE superiori a HOURS_THRESHOLD (> non >=).
 HOURS_THRESHOLD = 4
 COST_LOW = 23.46
 COST_HIGH = 165.0
@@ -132,7 +134,7 @@ def build_master(
 
 def _compute_costs_anomalies(df: pd.DataFrame, force_eligible: pd.Series | None = None) -> pd.DataFrame:
     df = df.copy()
-    df["eligible"] = df["hours"] >= HOURS_THRESHOLD
+    df["eligible"] = df["hours"] > HOURS_THRESHOLD
     if force_eligible is not None:
         df["eligible"] = df["eligible"] | force_eligible.reindex(df.index, fill_value=False)
     df["anomaly_double"] = df["amati"] & df["zippi"]
