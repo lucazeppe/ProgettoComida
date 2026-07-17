@@ -302,7 +302,7 @@ with col3:
     st.download_button(
         i18n.t(lang, "button_export_mail_reminder"),
         data=mail_reminder_bytes,
-        file_name=f"mail_reminder_{year_sel}-{month_sel:02d}.xlsx",
+        file_name="mail_reminder.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
