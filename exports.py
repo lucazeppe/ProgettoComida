@@ -52,7 +52,8 @@ def build_reminder_export(master_df: pd.DataFrame) -> bytes:
 MAIL_REMINDER_OBJECT_VALUE = "Comida"
 
 MAIL_REMINDER_HEADERS = (
-    ["Employee ID", "Name", "Email", "Object", "Anomaly Hours", "Anomaly Booking", "Allegato", "NameAllegato"]
+    ["Employee ID", "Name", "Email", "Object", "Anomaly Hours", "Anomaly Booking",
+     "Allegato", "NameAllegato", "ProcessingState"]
     + [f"Att{i}" for i in range(1, 31)]
 )
 
@@ -80,7 +81,7 @@ def build_mail_reminder_export(master_df: pd.DataFrame) -> bytes:
         ws.append([
             emp_id, nombre, email, MAIL_REMINDER_OBJECT_VALUE,
             ", ".join(hours_dates), ", ".join(booking_dates),
-            "N", None,
+            "N", None, None,
         ] + [None] * 30)
 
     last_row = max(ws.max_row, 1)
