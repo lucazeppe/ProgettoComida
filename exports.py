@@ -52,7 +52,7 @@ def build_reminder_export(master_df: pd.DataFrame) -> bytes:
 MAIL_REMINDER_OBJECT_VALUE = "Comida"
 
 MAIL_REMINDER_HEADERS = (
-    ["Employee ID", "Name", "Email", "Object", "Anomaly Hours", "Anomaly Booking",
+    ["RecordID", "Employee ID", "Name", "Email", "Object", "Anomaly Hours", "Anomaly Booking",
      "Allegato", "NameAllegato", "ProcessingState"]
     + [f"Att{i}" for i in range(1, 31)]
 )
@@ -73,13 +73,15 @@ def build_mail_reminder_export(master_df: pd.DataFrame) -> bytes:
     ws.append(MAIL_REMINDER_HEADERS)
 
     anomalies = master_df[master_df["anomaly_hours"] | master_df["anomaly_double"]]
-    for emp_id, group in anomalies.sort_values("date").groupby("employee_id", sort=False):
+    for record_id, (emp_id, group) in enumerate(
+        anomalies.sort_values("date").groupby("employee_id", sort=False), start=1
+    ):
         nombre = group["nombre"].iloc[0]
         email = group["email"].iloc[0] if pd.notna(group["email"].iloc[0]) else ""
         hours_dates = group.loc[group["anomaly_hours"], "date"].apply(lambda d: d.strftime("%d/%m/%Y"))
         booking_dates = group.loc[group["anomaly_double"], "date"].apply(lambda d: d.strftime("%d/%m/%Y"))
         ws.append([
-            emp_id, nombre, email, MAIL_REMINDER_OBJECT_VALUE,
+            record_id, emp_id, nombre, email, MAIL_REMINDER_OBJECT_VALUE,
             ", ".join(hours_dates), ", ".join(booking_dates),
             "N", None, None,
         ] + [None] * 30)
@@ -92,12 +94,13 @@ def build_mail_reminder_export(master_df: pd.DataFrame) -> bytes:
 
     for cell in ws[1]:
         cell.font = HEADER_FONT
-    ws.column_dimensions["A"].width = 14
-    ws.column_dimensions["B"].width = 28
+    ws.column_dimensions["A"].width = 10
+    ws.column_dimensions["B"].width = 14
     ws.column_dimensions["C"].width = 28
-    ws.column_dimensions["D"].width = 12
-    ws.column_dimensions["E"].width = 30
+    ws.column_dimensions["D"].width = 28
+    ws.column_dimensions["E"].width = 12
     ws.column_dimensions["F"].width = 30
+    ws.column_dimensions["G"].width = 30
 
     buf = BytesIO()
     wb.save(buf)
