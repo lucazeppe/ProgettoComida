@@ -1,6 +1,6 @@
 # Controllo Pasti Aziendali — Amati / Zippi
 
-App Streamlit per il controllo mensile dei buoni pasto aziendali, con incrocio tra gli ordini di due fornitori (Amati e Zippi) e le ore lavorate dei dipendenti. Nessun database o persistenza: ogni sessione parte da zero caricando i file del mese.
+App Streamlit per il controllo mensile dei buoni pasto aziendali, con incrocio tra gli ordini di due fornitori (Amati e Zippi) e le ore lavorate dei dipendenti. Nessun database o persistenza: ogni sessione parte da zero caricando i file del mese. Interfaccia disponibile in italiano (default) e spagnolo, con toggle a bandiera in alto nella sidebar.
 
 ## Regole di business
 
@@ -33,16 +33,26 @@ python3 -m streamlit run app.py
 
 La chiave di match tra i file è l'**Employee ID** in formato `2000xxx`.
 
-**Coerenza col mese scelto**: sui file ordini (Zippi e Amati) eventuali giorni fuori dal mese selezionato bloccano il processamento con un errore descrittivo — sugli ordini la correttezza del mese è essenziale. Sul file ore invece eventuali colonne di altri mesi (es. l'export sconfina nel mese successivo, come tipicamente accade) vengono **ignorate silenziosamente**: servono solo come supporto per leggere le ore dei giorni del mese scelto.
+**Coerenza col mese scelto**: sui file ordini (Zippi e Amati) eventuali giorni fuori dal mese selezionato bloccano il processamento con un errore descrittivo — sugli ordini la correttezza del mese è essenziale. Sul file ore invece eventuali colonne di altri mesi (es. l'export sconfina nel mese successivo, come tipicamente accade) vengono **ignorate silenziosamente**: servono solo come supporto per leggere le ore dei giorni del mese scelto. Un dipendente con ordini ma assente dal file ore non blocca il processamento (trattato come 0 ore quel giorno) ma genera un avviso dedicato, richiudibile, a video.
+
+## Funzionalità principali
+
+- **Vista dipendenti**: tabella con ordini/anomalie per giorno, filtri (solo anomalie, ricerca per ID/nome, intervallo date), e forzature manuali (rimuovi ordine Amati/Zippi, abbona vincolo ore) applicabili prima di generare gli export.
+- **Abbono automatico praticanti**: toggle che abbona di default l'anomalia "ore insufficienti" per i dipendenti con email `.intern@e80group.com` (mai la doppia prenotazione), senza renderlo un vincolo permanente se poi disattivato.
+- **Vista fornitori**: conteggio pasti per Amati/Zippi per giorno, per validare le fatture (nessun importo).
 
 ## Output
 
-- **Export solleciti anomalie**: Excel con ID dipendente, nome, email, giorno e ragione dell'anomalia — pensato come base per un flusso Power Automate di sollecito via email.
-- **Export riepilogo colorato**: Excel con dipendenti in riga e giorni del mese in colonna; cella `A`/`Z`/`AZ` colorata di verde (diritto al pasto) o rosso (nessun diritto).
+Tutti gli export Excel sono **sempre in inglese**, indipendentemente dalla lingua scelta nell'interfaccia — così eventuali automazioni a valle (es. Power Automate) non dipendono dal toggle di lingua.
+
+- **Scarica anomalie**: un record per ogni singola anomalia (ID dipendente, nome, email, giorno, ragione) — un giorno con entrambe le anomalie genera 2 record.
+- **Scarica riepilogo**: dipendenti in riga, giorni del mese in colonna; cella `A`/`Z`/`AZ` colorata di verde (diritto al pasto) o rosso (nessun diritto), con colonne di totale per dipendente e due righe di totale giornaliero per fornitore in fondo.
+- **Scarica sollecito mail**: un record per dipendente con almeno un'anomalia (non uno per anomalia), con le date di ciascun tipo di anomalia elencate come lista testuale `GG/MM/AAAA, GG/MM/AAAA` in due colonne separate (ore insufficienti / doppia prenotazione). Foglio "Emails" formattato come vera **Tabella Excel** (non un semplice range), richiesto dal flusso Power Automate di invio solleciti. Colonne aggiuntive per quel flusso: `RecordID` (intero progressivo da 1, valore fisso non formula), `Object` (fisso `"Comida"`), `Allegato`/`NameAllegato`/`ProcessingState`/`Att1..Att30` (vuote, strutturali per il template).
 
 ## Struttura del codice
 
 - `parsers.py` — lettura e validazione dei 3 file di input.
 - `business.py` — unione dati, calcolo costi/anomalie, applicazione delle forzature.
-- `exports.py` — generazione dei due file Excel di export.
+- `exports.py` — generazione dei tre file Excel di export (sempre in inglese).
+- `i18n.py` — traduzioni IT/ES dell'interfaccia e dei messaggi di errore/warning dei parser.
 - `app.py` — interfaccia Streamlit.
