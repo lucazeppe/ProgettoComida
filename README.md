@@ -38,7 +38,7 @@ La chiave di match tra i file è l'**Employee ID** in formato `2000xxx`.
 ## Funzionalità principali
 
 - **Vista dipendenti**: tabella con ordini/anomalie per giorno, filtri (solo anomalie, ricerca per ID/nome, intervallo date), e forzature manuali (rimuovi ordine Amati/Zippi, abbona vincolo ore) applicabili prima di generare gli export.
-- **Abbono automatico praticanti**: toggle che abbona di default l'anomalia "ore insufficienti" per i dipendenti con email `.intern@e80group.com` (mai la doppia prenotazione), senza renderlo un vincolo permanente se poi disattivato.
+- **Abbono automatico praticanti**: toggle che abbona di default l'anomalia "ore insufficienti" per i dipendenti riconosciuti come praticanti in base al dominio email (mai la doppia prenotazione), senza renderlo un vincolo permanente se poi disattivato.
 - **Vista fornitori**: conteggio pasti per Amati/Zippi per giorno, per validare le fatture (nessun importo).
 
 ## Output
