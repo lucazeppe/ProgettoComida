@@ -39,11 +39,12 @@ La chiave di match tra i file è l'**Employee ID** in formato `2000xxx`.
 
 - **Vista dipendenti**: tabella con ordini/anomalie per giorno, filtri (solo anomalie, ricerca per ID/nome, intervallo date), e forzature manuali (rimuovi ordine Amati/Zippi, abbona vincolo ore) applicabili prima di generare gli export.
 - **Abbono automatico praticanti**: toggle che abbona di default l'anomalia "ore insufficienti" per i dipendenti riconosciuti come praticanti in base al dominio email (mai la doppia prenotazione), senza renderlo un vincolo permanente se poi disattivato.
+- **Selezione email**: se per lo stesso dipendente Amati e Zippi riportano email diverse, viene usata quella con dominio aziendale se presente (altrimenti una qualsiasi delle due). I dipendenti con almeno un ordine associato a un'email non aziendale vengono segnalati con un avviso dedicato, richiudibile, a video.
 - **Vista fornitori**: conteggio pasti per Amati/Zippi per giorno, per validare le fatture (nessun importo).
 
 ## Output
 
-Tutti gli export Excel sono **sempre in inglese**, indipendentemente dalla lingua scelta nell'interfaccia — così eventuali automazioni a valle (es. Power Automate) non dipendono dal toggle di lingua.
+Tutti gli export Excel sono **sempre in inglese**, indipendentemente dalla lingua scelta nell'interfaccia — così eventuali automazioni a valle (es. Power Automate) non dipendono dal toggle di lingua. Dove compare la colonna email, le email non aziendali sono scritte in **font rosso**.
 
 - **Scarica anomalie**: un record per ogni singola anomalia (ID dipendente, nome, email, giorno, ragione) — un giorno con entrambe le anomalie genera 2 record.
 - **Scarica riepilogo**: dipendenti in riga, giorni del mese in colonna; cella `A`/`Z`/`AZ` colorata di verde (diritto al pasto) o rosso (nessun diritto), con colonne di totale per dipendente e due righe di totale giornaliero per fornitore in fondo.
