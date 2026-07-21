@@ -123,6 +123,8 @@ TOTAL_COLUMN_HEADERS = [
     "Employee Cost", "Note",
 ]
 
+NOTE_MISSING_HOURS_RECORD = "Hours anomalies due to missing record in Hours file — verify"
+
 
 def build_summary_export(master_df: pd.DataFrame, year: int, month: int) -> bytes:
     """Righe = dipendenti (ID, nome), colonne = giorni del mese + totali mensili.
@@ -172,6 +174,7 @@ def build_summary_export(master_df: pd.DataFrame, year: int, month: int) -> byte
         totale_amati = int(emp_rows["amati"].sum())
         totale_zippi = int(emp_rows["zippi"].sum())
         costo_dipendente = emp_rows["cost_amati"].sum(skipna=True) + emp_rows["cost_zippi"].sum(skipna=True)
+        note = NOTE_MISSING_HOURS_RECORD if (emp_rows["anomaly_hours"] & emp_rows["hours_missing"]).any() else None
 
         line = [emp_id, emp["nombre"]] + [None] * len(days) + [
             totale_amati + totale_zippi,
@@ -180,7 +183,7 @@ def build_summary_export(master_df: pd.DataFrame, year: int, month: int) -> byte
             int(emp_rows["anomaly_hours"].sum()),
             int(emp_rows["anomaly_double"].sum()),
             round(float(costo_dipendente), 2),
-            None,
+            note,
         ]
         ws.append(line)
         excel_row = ws.max_row

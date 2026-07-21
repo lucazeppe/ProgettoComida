@@ -36,7 +36,7 @@ def is_company_email(email) -> bool:
 MASTER_COLUMNS = [
     "employee_id", "nombre", "email", "date",
     "amati", "zippi", "hours", "eligible",
-    "anomaly_double", "anomaly_hours",
+    "anomaly_double", "anomaly_hours", "hours_missing",
     "cost_amati", "cost_zippi",
 ]
 
@@ -147,6 +147,11 @@ def build_master(
     orders["amati"] = orders["amati"].fillna(False)
 
     orders = orders.merge(hours_df[["employee_id", "date", "hours"]], on=["employee_id", "date"], how="left")
+    # Prima del fillna: nessun record per (employee_id, date) nel file ore,
+    # distinto da "0 ore effettivamente registrate" — usato per segnalare
+    # nel riepilogo le anomalie ore dovute a un record assente, non a ore
+    # insufficienti realmente registrate.
+    orders["hours_missing"] = orders["hours"].isna()
     orders["hours"] = orders["hours"].fillna(0.0)
 
     # Nome/Cognome dal file ore: attributo per dipendente (non per singolo
