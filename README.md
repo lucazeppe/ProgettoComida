@@ -4,8 +4,8 @@ App Streamlit per il controllo mensile dei buoni pasto aziendali, con incrocio t
 
 ## Regole di business
 
-- Un dipendente ha diritto al pasto a **23,46** se ha lavorato più di **4 ore** (soglia stretta: 4 ore esatte NON danno diritto) quel giorno; altrimenti il pasto costa **165**.
-- In caso di doppia prenotazione (ordine sia Amati che Zippi lo stesso giorno) con diritto al pasto: un ordine viene addebitato a 23,46 e l'altro a 165 (mai 23,46 due volte). Senza diritto: entrambi a 165.
+- Un dipendente ha diritto al pasto a **23,46** se ha lavorato più di **4 ore** (soglia stretta: 4 ore esatte NON danno diritto) quel giorno; altrimenti il pasto costa **165** (Amati) o **160** (Zippi) — le due tariffe "senza diritto" sono diverse per fornitore.
+- In caso di doppia prenotazione (ordine sia Amati che Zippi lo stesso giorno) con diritto al pasto: un ordine viene addebitato a 23,46 e l'altro a 165 (mai 23,46 due volte). Senza diritto: 165 + 160 (325 totali).
 - Il recap per fornitore (usato per validare le fatture) conta solo il numero di pasti forniti, senza importi: una doppia prenotazione conta 1 pasto per Amati **e** 1 per Zippi.
 - Le anomalie rilevate sono due: **doppia prenotazione** e **ordine in giorno con ore insufficienti**. Sono forzabili/correggibili a video (rimozione di un ordine, abbono del vincolo ore) prima di generare gli export.
 

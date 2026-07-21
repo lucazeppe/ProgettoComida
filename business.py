@@ -11,7 +11,8 @@ from parsers import title_case
 # STRETTAMENTE superiori a HOURS_THRESHOLD (> non >=).
 HOURS_THRESHOLD = 4
 COST_LOW = 23.46
-COST_HIGH = 165.0
+COST_HIGH = 165.0  # Amati senza diritto; anche Zippi nella doppia CON diritto (vedi sotto)
+COST_ZIPPI_HIGH = 160.0  # Zippi senza diritto, sia da solo sia nella doppia SENZA diritto
 
 # Le etichette anomalia a video seguono la lingua scelta (vedi i18n.py,
 # chiavi "anomaly_double"/"anomaly_hours"). Gli export Excel invece usano
@@ -180,11 +181,11 @@ def _compute_costs_anomalies(df: pd.DataFrame, force_eligible: pd.Series | None 
             if row["eligible"]:
                 ca, cz = COST_LOW, COST_HIGH  # Amati assorbe la tariffa scontata (ordine alfabetico)
             else:
-                ca, cz = COST_HIGH, COST_HIGH
+                ca, cz = COST_HIGH, COST_ZIPPI_HIGH
         elif row["amati"]:
             ca = COST_LOW if row["eligible"] else COST_HIGH
         elif row["zippi"]:
-            cz = COST_LOW if row["eligible"] else COST_HIGH
+            cz = COST_LOW if row["eligible"] else COST_ZIPPI_HIGH
         cost_amati.append(ca)
         cost_zippi.append(cz)
     df["cost_amati"] = cost_amati
