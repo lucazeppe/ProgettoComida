@@ -71,9 +71,10 @@ STRINGS = {
         "warn_zippi_weekend_orders": "File Zippi: trovati {n} ordini nel weekend (sabato/domenica), inattesi.",
         "err_amati_bad_header": "File Amati, foglio '{sheet_name}': intestazione inattesa ({e}).",
         "err_amati_missing_weeks": "File Amati: mancano i fogli per la/e settimana/e ISO {weeks} del mese {year}-{month:02d}. Verifica di aver caricato tutti i fogli/il file corretto.",
-        "err_amati_duplicate_week": "File Amati: più fogli ({sheet_names}) contengono il numero della settimana {week}. Rinomina/rimuovi i fogli duplicati prima di ricaricare il file.",
+        "err_amati_duplicate_week": "File Amati: più fogli contengono lo stesso numero di settimana: {details}. Rinomina/rimuovi i fogli duplicati prima di ricaricare il file.",
         "err_amati_missing_weekday_cols": "File Amati, foglio '{sheet_name}': mancano le colonne giorno {weekdays}.",
         "err_amati_empty_week_sheet": "File Amati, foglio '{sheet_name}' (settimana {week}): nessuna riga dipendente trovata.",
+        "err_amati_sheet_multiple_weeks": "File Amati: il foglio '{sheet_name}' sembra corrispondere a più settimane richieste ({weeks}). Rinomina il foglio in modo che contenga solo il numero della sua settimana.",
         "warn_amati_order_out_of_month": "File Amati, foglio '{sheet_name}': ordine per {nombre} {apellidos} in un giorno ({weekday}) fuori dal mese {year}-{month:02d}, ignorato.",
         "err_hours_no_id_col": "File Ore: non trovo una colonna ID dipendente riconosciuta (cercate: {candidates}) nelle prime righe del file.",
         "err_hours_no_date_header": "File Ore: nessuna colonna con intestazione data trovata.",
@@ -147,9 +148,10 @@ STRINGS = {
         "warn_zippi_weekend_orders": "Archivo Zippi: se encontraron {n} pedidos en el fin de semana (sábado/domingo), inesperados.",
         "err_amati_bad_header": "Archivo Amati, hoja '{sheet_name}': encabezado inesperado ({e}).",
         "err_amati_missing_weeks": "Archivo Amati: faltan las hojas de la(s) semana(s) ISO {weeks} del mes {year}-{month:02d}. Verifica haber cargado todas las hojas/el archivo correcto.",
-        "err_amati_duplicate_week": "Archivo Amati: varias hojas ({sheet_names}) contienen el número de la semana {week}. Renombra/elimina las hojas duplicadas antes de volver a cargar el archivo.",
+        "err_amati_duplicate_week": "Archivo Amati: varias hojas contienen el mismo número de semana: {details}. Renombra/elimina las hojas duplicadas antes de volver a cargar el archivo.",
         "err_amati_missing_weekday_cols": "Archivo Amati, hoja '{sheet_name}': faltan las columnas de día {weekdays}.",
         "err_amati_empty_week_sheet": "Archivo Amati, hoja '{sheet_name}' (semana {week}): no se encontró ninguna fila de empleado.",
+        "err_amati_sheet_multiple_weeks": "Archivo Amati: la hoja '{sheet_name}' parece corresponder a varias semanas requeridas ({weeks}). Renombra la hoja para que contenga solo el número de su semana.",
         "warn_amati_order_out_of_month": "Archivo Amati, hoja '{sheet_name}': pedido de {nombre} {apellidos} en un día ({weekday}) fuera del mes {year}-{month:02d}, ignorado.",
         "err_hours_no_id_col": "Archivo de Horas: no se encuentra una columna de ID de empleado reconocida (buscadas: {candidates}) en las primeras filas del archivo.",
         "err_hours_no_date_header": "Archivo de Horas: no se encontró ninguna columna con encabezado de fecha.",
@@ -197,7 +199,9 @@ def missing_hours_warning(lang: str, missing: list[dict]) -> str:
     subject = f" {t(lang, 'mh_and')} ".join(subject_parts)
 
     verb = t(lang, "mh_verb_singular" if len(missing) == 1 else "mh_verb_plural")
-    names = ", ".join(m["label"] for m in missing[:10])
+    # Elenco di dettaglio: praticanti prima, poi dipendenti regolari (non per ID).
+    ordered = sorted(missing, key=lambda m: not m["is_intern"])
+    names = ", ".join(m["label"] for m in ordered[:10])
     more = t(lang, "mh_more", count=len(missing) - 10) if len(missing) > 10 else ""
 
     return t(lang, "mh_body", subject=subject, verb=verb, names=names, more=more)

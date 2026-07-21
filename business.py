@@ -48,7 +48,11 @@ def _build_employee_registry(zippi_df: pd.DataFrame, amati_df: pd.DataFrame, hou
     def _note(emp_id, nombre, email) -> None:
         if nombre and not names.get(emp_id):
             names[emp_id] = nombre
-        if email:
+        # isinstance esclude sia None sia il NaN float con cui pandas rappresenta
+        # le celle email mancanti in una colonna con dtype stringa mista: bool(nan)
+        # è True, quindi un controllo "if email:" da solo tratterebbe una cella
+        # vuota come un'email valida.
+        if isinstance(email, str) and email:
             seen = emails.setdefault(emp_id, [])
             if email not in seen:
                 seen.append(email)
@@ -91,7 +95,11 @@ def find_non_company_email_ids(zippi_df: pd.DataFrame, amati_df: pd.DataFrame, e
 
     ids: set = set()
     for df in (zippi_df, amati_df):
-        mask = df["email"].apply(lambda e: bool(e) and not is_company_email(e))
+        # isinstance esclude il NaN float con cui pandas rappresenta le celle
+        # email mancanti in una colonna con dtype stringa mista (bool(nan) è
+        # True): senza, un dipendente senza alcuna email verrebbe segnalato
+        # come se avesse usato un'email non aziendale.
+        mask = df["email"].apply(lambda e: isinstance(e, str) and e != "" and not is_company_email(e))
         ids.update(df.loc[mask, "employee_id"])
     return ids
 

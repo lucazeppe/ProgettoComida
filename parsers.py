@@ -198,11 +198,20 @@ def parse_amati(file, year: int, month: int, lang: str = "it") -> tuple[pd.DataF
     sheet_by_week: dict[int, str] = {}
     missing_weeks: list[int] = []
     duplicate_weeks: list[tuple[int, list[str]]] = []
+    # Traccia quali settimane richieste "reclama" ciascun foglio: se un foglio
+    # contiene più di un numero di settimana richiesto nel nome (es. "Semana
+    # 23-24"), matcherebbe correttamente entrambe prese singolarmente (1 solo
+    # match ciascuna) senza mai far scattare il controllo duplicate_weeks
+    # (che guarda solo "più fogli per la stessa settimana", non il contrario) —
+    # duplicando in silenzio gli ordini di quel foglio su due settimane diverse.
+    sheet_week_claims: dict[str, list[int]] = {}
     for week_number in sorted(required_weeks):
         matches = [
             name for name in wb.sheetnames
             if week_number in [int(n) for n in re.findall(r"\d+", name)]
         ]
+        for name in matches:
+            sheet_week_claims.setdefault(name, []).append(week_number)
         if not matches:
             missing_weeks.append(week_number)
         elif len(matches) > 1:
@@ -216,8 +225,16 @@ def parse_amati(file, year: int, month: int, lang: str = "it") -> tuple[pd.DataF
             weeks=", ".join(str(w) for w in missing_weeks), year=year, month=month,
         ))
     if duplicate_weeks:
-        w, names = duplicate_weeks[0]
-        raise ValueError(i18n.t(lang, "err_amati_duplicate_week", week=w, sheet_names=", ".join(names)))
+        details = "; ".join(f"{w} ({', '.join(names)})" for w, names in duplicate_weeks)
+        raise ValueError(i18n.t(lang, "err_amati_duplicate_week", details=details))
+
+    ambiguous_sheets = {name: weeks for name, weeks in sheet_week_claims.items() if len(weeks) > 1}
+    if ambiguous_sheets:
+        name, weeks = next(iter(ambiguous_sheets.items()))
+        raise ValueError(i18n.t(
+            lang, "err_amati_sheet_multiple_weeks",
+            sheet_name=name, weeks=", ".join(str(w) for w in weeks),
+        ))
 
     records = []
     for week_number in sorted(required_weeks):
@@ -240,7 +257,6 @@ def parse_amati(file, year: int, month: int, lang: str = "it") -> tuple[pd.DataF
             try:
                 day_cols[wd_idx] = lower_header.index(wd_name.lower())
             except ValueError:
-                day_cols[wd_idx] = None
                 missing_weekday_cols.append(wd_name)
         if missing_weekday_cols:
             raise ValueError(i18n.t(
@@ -260,8 +276,6 @@ def parse_amati(file, year: int, month: int, lang: str = "it") -> tuple[pd.DataF
             apellidos = str(row[col_apellidos]).strip() if row[col_apellidos] else ""
             email = row[col_email]
             for wd_idx, col_idx in day_cols.items():
-                if col_idx is None:
-                    continue
                 value = row[col_idx]
                 if value is None:
                     continue
@@ -312,11 +326,14 @@ def parse_hours(file, year: int, month: int, warn_weekends: bool = True, lang: s
     for i in range(1, 11):
         row = [c.value for c in ws[i]]
         lower_row = [str(v).strip().lower() if v else "" for v in row]
-        # Prima cerca una colonna "ID" prioritaria; solo se assente in questa
-        # riga, ripiega su "Dipendente"/"Empleado" (numero interno, non ideale).
-        match_j = next((j for j, v in enumerate(lower_row) if v in ID_COLUMN_CANDIDATES_PRIORITY), None)
+        # Prima cerca una colonna "ID" prioritaria (nell'ordine di rango della lista,
+        # non nell'ordine delle colonne: "id" deve vincere su "cod ssff" anche se
+        # quest'ultima compare più a sinistra nell'intestazione); solo se nessuna
+        # candidata prioritaria è presente, ripiega su "Dipendente"/"Empleado"
+        # (numero interno, non ideale).
+        match_j = next((lower_row.index(c) for c in ID_COLUMN_CANDIDATES_PRIORITY if c in lower_row), None)
         if match_j is None:
-            match_j = next((j for j, v in enumerate(lower_row) if v in ID_COLUMN_CANDIDATES_FALLBACK), None)
+            match_j = next((lower_row.index(c) for c in ID_COLUMN_CANDIDATES_FALLBACK if c in lower_row), None)
         if match_j is not None:
             id_row_idx = i
             id_col_idx = match_j
