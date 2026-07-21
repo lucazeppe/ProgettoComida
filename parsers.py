@@ -18,7 +18,7 @@ import i18n
 # vincere su "dipendente"/"empleado" quando entrambe compaiono nella stessa
 # intestazione, perché quest'ultime sono spesso un numero dipendente interno
 # più corto (es. 100) e NON la chiave di match richiesta.
-ID_COLUMN_CANDIDATES_PRIORITY = ["id", "employee id", "id dipendente"]
+ID_COLUMN_CANDIDATES_PRIORITY = ["id", "employee id", "id dipendente", "cod ssff"]
 ID_COLUMN_CANDIDATES_FALLBACK = ["dipendente", "empleado", "numero de empleado", "employee"]
 ID_COLUMN_CANDIDATES = ID_COLUMN_CANDIDATES_PRIORITY + ID_COLUMN_CANDIDATES_FALLBACK
 
