@@ -237,9 +237,14 @@ elif isinstance(date_range, date):
 
 st.caption(i18n.t(lang, "caption_rows_shown", n=len(view), m=n_total))
 
-view["Rimuovi Amati"] = view.apply(lambda r: bool(combined_overrides.get((r["employee_id"], r["date"]), {}).get("remove_amati")), axis=1)
-view["Rimuovi Zippi"] = view.apply(lambda r: bool(combined_overrides.get((r["employee_id"], r["date"]), {}).get("remove_zippi")), axis=1)
-view["Abbona vincolo ore"] = view.apply(lambda r: bool(combined_overrides.get((r["employee_id"], r["date"]), {}).get("waive_hours")), axis=1)
+# .astype(bool) esplicito: su una view filtrata a 0 righe, .apply(axis=1) non
+# riesce a dedurre il tipo di ritorno della lambda e produce dtype float64
+# invece di bool, facendo fallire st.data_editor più sotto (CheckboxColumn
+# incompatibile con ColumnDataKind.FLOAT) — stesso problema già risolto per
+# _is_weekday in business.py.
+view["Rimuovi Amati"] = view.apply(lambda r: bool(combined_overrides.get((r["employee_id"], r["date"]), {}).get("remove_amati")), axis=1).astype(bool)
+view["Rimuovi Zippi"] = view.apply(lambda r: bool(combined_overrides.get((r["employee_id"], r["date"]), {}).get("remove_zippi")), axis=1).astype(bool)
+view["Abbona vincolo ore"] = view.apply(lambda r: bool(combined_overrides.get((r["employee_id"], r["date"]), {}).get("waive_hours")), axis=1).astype(bool)
 
 display_cols = [
     "employee_id", "nombre", "email", "date", "amati", "zippi", "hours",
