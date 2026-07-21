@@ -184,25 +184,45 @@ def parse_amati(file, year: int, month: int, lang: str = "it") -> tuple[pd.DataF
             slots[d.weekday()] = d
         padded_weeks.append(slots)
 
-    sheet_names = wb.sheetnames
-    if len(sheet_names) != len(padded_weeks):
-        raise ValueError(
-            i18n.t(lang, "err_amati_sheet_week_mismatch", n=len(sheet_names), year=year, month=month, m=len(padded_weeks))
-        )
+    # Le settimane richieste si identificano per numero di settimana ISO (non
+    # per posizione/ordine delle tab): ogni chunk Lun..Ven del mese ha un solo
+    # numero di settimana ISO, uguale per tutti i suoi giorni.
+    required_weeks: dict[int, list[date | None]] = {
+        week[0].isocalendar()[1]: slots for week, slots in zip(weeks, padded_weeks)
+    }
 
-    # I fogli vengono abbinati alle settimane in base al solo ordine delle tab
-    # nel file. Se il nome del foglio contiene un numero (es. "Hoja 3"), verifica
-    # che sia crescente nell'ordine delle tab: altrimenti avvisa (non blocca),
-    # perché uno scambio di tab produrrebbe un'attribuzione settimana errata
-    # senza nessun altro segnale visibile.
-    sheet_numbers = [re.search(r"\d+", name) for name in sheet_names]
-    if all(sheet_numbers):
-        numbers = [int(m.group()) for m in sheet_numbers]
-        if numbers != sorted(numbers):
-            warnings.append(i18n.t(lang, "warn_amati_sheet_order", sheet_names=", ".join(sheet_names)))
+    # Un foglio "appartiene" a una settimana richiesta se quel numero compare
+    # tra TUTTI i numeri presenti nel suo nome (non solo il primo): più robusto
+    # di un semplice match posizionale. Fogli che non appartengono a nessuna
+    # settimana richiesta (numeri extra, es. di un altro mese) sono ignorati.
+    sheet_by_week: dict[int, str] = {}
+    missing_weeks: list[int] = []
+    duplicate_weeks: list[tuple[int, list[str]]] = []
+    for week_number in sorted(required_weeks):
+        matches = [
+            name for name in wb.sheetnames
+            if week_number in [int(n) for n in re.findall(r"\d+", name)]
+        ]
+        if not matches:
+            missing_weeks.append(week_number)
+        elif len(matches) > 1:
+            duplicate_weeks.append((week_number, matches))
+        else:
+            sheet_by_week[week_number] = matches[0]
+
+    if missing_weeks:
+        raise ValueError(i18n.t(
+            lang, "err_amati_missing_weeks",
+            weeks=", ".join(str(w) for w in missing_weeks), year=year, month=month,
+        ))
+    if duplicate_weeks:
+        w, names = duplicate_weeks[0]
+        raise ValueError(i18n.t(lang, "err_amati_duplicate_week", week=w, sheet_names=", ".join(names)))
 
     records = []
-    for sheet_name, week_slots in zip(sheet_names, padded_weeks):
+    for week_number in sorted(required_weeks):
+        sheet_name = sheet_by_week[week_number]
+        week_slots = required_weeks[week_number]
         ws = wb[sheet_name]
         header = [c.value for c in ws[1]]
         lower_header = [str(v).strip().lower() if v else "" for v in header]
@@ -215,18 +235,27 @@ def parse_amati(file, year: int, month: int, lang: str = "it") -> tuple[pd.DataF
             raise ValueError(i18n.t(lang, "err_amati_bad_header", sheet_name=sheet_name, e=e))
 
         day_cols = {}
+        missing_weekday_cols = []
         for wd_idx, wd_name in enumerate(WEEKDAY_COLS):
             try:
                 day_cols[wd_idx] = lower_header.index(wd_name.lower())
             except ValueError:
                 day_cols[wd_idx] = None
+                missing_weekday_cols.append(wd_name)
+        if missing_weekday_cols:
+            raise ValueError(i18n.t(
+                lang, "err_amati_missing_weekday_cols",
+                sheet_name=sheet_name, weekdays=", ".join(missing_weekday_cols),
+            ))
 
+        has_data_row = False
         for row in ws.iter_rows(min_row=2, values_only=True):
             if not row or row[col_nombre] is None or str(row[col_nombre]).strip() == "":
                 continue
             emp_id = _normalize_id(row[col_id])
             if emp_id is None:
                 continue
+            has_data_row = True
             nombre = str(row[col_nombre]).strip()
             apellidos = str(row[col_apellidos]).strip() if row[col_apellidos] else ""
             email = row[col_email]
@@ -257,6 +286,9 @@ def parse_amati(file, year: int, month: int, lang: str = "it") -> tuple[pd.DataF
                     "email": str(email).strip() if email else None,
                     "date": target_date,
                 })
+
+        if not has_data_row:
+            raise ValueError(i18n.t(lang, "err_amati_empty_week_sheet", sheet_name=sheet_name, week=week_number))
 
     df = pd.DataFrame(records, columns=["employee_id", "nombre", "apellidos", "email", "date"])
     return df, warnings

@@ -28,7 +28,7 @@ python3 -m streamlit run app.py
 ## File di input richiesti
 
 1. **Ordini Zippi** (.xlsx) — una riga per dipendente, con le date di ordine elencate nelle colonne successive a `Correo`.
-2. **Ordini Amati** (.xlsx) — un foglio per settimana, colonne `Lunes..Viernes` con 0/1. Le date non sono esplicite: vengono dedotte automaticamente in base al mese scelto (un foglio = una settimana consecutiva).
+2. **Ordini Amati** (.xlsx) — un foglio per settimana, colonne `Lunes..Viernes` con 0/1. Le date non sono esplicite: vengono dedotte automaticamente in base al mese scelto. I fogli si identificano dal **numero di settimana ISO contenuto nel nome del foglio** (es. `"23"`), non dall'ordine delle schede nel file: devono esistere tutti i fogli delle settimane del mese scelto (fogli extra vengono ignorati), ciascuno con tutte e 5 le colonne giorno e almeno una riga dipendente, altrimenti il caricamento viene bloccato con un errore descrittivo.
 3. **Ore lavorate** (.xlsx) — una riga per dipendente con **ID formato 2000xxx**, colonne datetime (una per giorno) con le ore lavorate.
 
 La chiave di match tra i file è l'**Employee ID** in formato `2000xxx`.
