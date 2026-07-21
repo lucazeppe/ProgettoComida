@@ -22,10 +22,15 @@ ANOMALY_DOUBLE_LABEL_EXPORT = "Double Booking"
 ANOMALY_HOURS_LABEL_EXPORT = "Insufficient Office Hours"
 
 INTERN_EMAIL_SUFFIX = ".intern@e80group.com"
+COMPANY_EMAIL_DOMAIN = "@e80group.com"
 
 
 def is_intern(email) -> bool:
     return isinstance(email, str) and email.strip().lower().endswith(INTERN_EMAIL_SUFFIX)
+
+
+def is_company_email(email) -> bool:
+    return isinstance(email, str) and email.strip().lower().endswith(COMPANY_EMAIL_DOMAIN)
 
 MASTER_COLUMNS = [
     "employee_id", "nombre", "email", "date",
@@ -36,31 +41,58 @@ MASTER_COLUMNS = [
 
 
 def _build_employee_registry(zippi_df: pd.DataFrame, amati_df: pd.DataFrame, hours_df: pd.DataFrame) -> pd.DataFrame:
-    records = {}
+    names: dict[str, str] = {}
+    emails: dict[str, list[str]] = {}
+
+    def _note(emp_id, nombre, email) -> None:
+        if nombre and not names.get(emp_id):
+            names[emp_id] = nombre
+        if email:
+            seen = emails.setdefault(emp_id, [])
+            if email not in seen:
+                seen.append(email)
 
     for _, r in amati_df.iterrows():
-        full_name = title_case(f"{r['nombre']} {r['apellidos']}".strip())
-        records.setdefault(r["employee_id"], {"nombre": full_name, "email": r["email"]})
+        _note(r["employee_id"], title_case(f"{r['nombre']} {r['apellidos']}".strip()), r["email"])
 
     for _, r in zippi_df.iterrows():
-        entry = records.setdefault(r["employee_id"], {"nombre": title_case(r["nombre"]), "email": r["email"]})
-        if not entry.get("email"):
-            entry["email"] = r["email"]
-        if not entry.get("nombre"):
-            entry["nombre"] = title_case(r["nombre"])
+        _note(r["employee_id"], title_case(r["nombre"]), r["email"])
 
     for emp_id in hours_df["employee_id"].unique():
-        records.setdefault(emp_id, {"nombre": None, "email": None})
+        names.setdefault(emp_id, None)
+        emails.setdefault(emp_id, [])
 
-    reg = pd.DataFrame(
-        [{"employee_id": k, "nombre": v["nombre"], "email": v["email"]} for k, v in records.items()],
-        columns=["employee_id", "nombre", "email"],
-    )
+    records = []
+    for emp_id in set(names) | set(emails):
+        candidates = emails.get(emp_id, [])
+        # Se per lo stesso dipendente compaiono email diverse tra i due ordini
+        # (Amati/Zippi) e una sola ha dominio aziendale, quella vince sempre;
+        # se nessuna ha dominio aziendale, si prende indistintamente la prima.
+        company_candidates = [e for e in candidates if is_company_email(e)]
+        email = company_candidates[0] if company_candidates else (candidates[0] if candidates else None)
+        records.append({"employee_id": emp_id, "nombre": names.get(emp_id), "email": email})
+
+    reg = pd.DataFrame(records, columns=["employee_id", "nombre", "email"])
     # Evita che i valori mancanti diventino NaN float (celle Excel non valide negli export):
     # meglio una stringa vuota, sia per i DataFrame vuoti che per join successivi.
     reg["nombre"] = reg["nombre"].fillna("")
     reg["email"] = reg["email"].fillna("")
     return reg
+
+
+def find_non_company_email_ids(zippi_df: pd.DataFrame, amati_df: pd.DataFrame, exclude_weekends: bool = True) -> set:
+    """Employee ID con almeno un ordine (Amati o Zippi) associato a una email non
+    aziendale — anche se poi, in caso di conflitto con un'altra email aziendale
+    per lo stesso dipendente, è quest'ultima ad essere scelta per le comunicazioni."""
+    if exclude_weekends:
+        zippi_df = zippi_df[_is_weekday(zippi_df["date"])]
+        amati_df = amati_df[_is_weekday(amati_df["date"])]
+
+    ids: set = set()
+    for df in (zippi_df, amati_df):
+        mask = df["email"].apply(lambda e: bool(e) and not is_company_email(e))
+        ids.update(df.loc[mask, "employee_id"])
+    return ids
 
 
 def _is_weekday(dates: pd.Series) -> pd.Series:

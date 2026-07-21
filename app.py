@@ -11,6 +11,7 @@ import i18n
 from business import (
     apply_overrides,
     build_master,
+    find_non_company_email_ids,
     is_intern,
     supplier_recap,
 )
@@ -46,6 +47,10 @@ if "missing_hours_employees" not in st.session_state:
     st.session_state.missing_hours_employees = []
 if "missing_hours_dismissed" not in st.session_state:
     st.session_state.missing_hours_dismissed = False
+if "non_company_email_employees" not in st.session_state:
+    st.session_state.non_company_email_employees = []
+if "non_company_email_dismissed" not in st.session_state:
+    st.session_state.non_company_email_dismissed = False
 
 st.title(i18n.t(lang, "app_title"))
 
@@ -103,12 +108,26 @@ if process:
         label = f"{emp_id} ({nombre})" if nombre else emp_id
         missing_employees.append({"label": label, "is_intern": is_intern(email)})
 
+    # Dipendenti con almeno un ordine effettuato con una email non aziendale
+    # (calcolato sugli stessi file grezzi con lo stesso filtro weekend usato da
+    # build_master, e poi ristretto ai soli ID con ordini effettivamente
+    # processati, per lo stesso motivo del controllo sopra).
+    non_company_ids = find_non_company_email_ids(zippi_df, amati_df, exclude_weekends=exclude_weekends)
+    non_company_ids &= ordering_ids
+    non_company_employees = []
+    for emp_id in sorted(non_company_ids):
+        row = master_df.loc[master_df["employee_id"] == emp_id]
+        nombre = row["nombre"].iloc[0] if not row.empty and row["nombre"].iloc[0] else ""
+        non_company_employees.append(f"{emp_id} ({nombre})" if nombre else emp_id)
+
     st.session_state.master_df = master_df
     st.session_state.overrides = {}
     st.session_state.warnings = all_warnings
     st.session_state.period = (year, month)
     st.session_state.missing_hours_employees = missing_employees
     st.session_state.missing_hours_dismissed = False
+    st.session_state.non_company_email_employees = non_company_employees
+    st.session_state.non_company_email_dismissed = False
 
 if st.session_state.master_df is None:
     st.info(i18n.t(lang, "info_upload_prompt"))
@@ -124,6 +143,15 @@ if st.session_state.missing_hours_employees and not st.session_state.missing_hou
     with col_w2:
         if st.button("✕", key="dismiss_missing_hours", help=i18n.t(lang, "dismiss_help")):
             st.session_state.missing_hours_dismissed = True
+            st.rerun()
+
+if st.session_state.non_company_email_employees and not st.session_state.non_company_email_dismissed:
+    col_nc1, col_nc2 = st.columns([12, 1])
+    with col_nc1:
+        st.warning(i18n.non_company_email_warning(lang, st.session_state.non_company_email_employees))
+    with col_nc2:
+        if st.button("✕", key="dismiss_non_company_email", help=i18n.t(lang, "dismiss_help")):
+            st.session_state.non_company_email_dismissed = True
             st.rerun()
 
 master_df = st.session_state.master_df

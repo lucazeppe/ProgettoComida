@@ -89,6 +89,7 @@ STRINGS = {
         "mh_and": "e",
         "mh_body": "{subject} {verb} ordini ma non risultano nel file ore (trattati come 0 ore, quindi anomalia su tutti i loro ordini): {names}{more}.",
         "mh_more": " e altri {count}",
+        "warn_non_company_email": "Dipendenti che hanno utilizzato una mail non aziendale per ordinare il pasto: {names}{more}.",
     },
     "es": {
         "page_title": "Control de Comidas de la Empresa",
@@ -162,6 +163,7 @@ STRINGS = {
         "mh_and": "y",
         "mh_body": "{subject} {verb} pedidos pero no aparecen en el archivo de horas (tratados como 0 horas, por lo tanto anomalía en todos sus pedidos): {names}{more}.",
         "mh_more": " y otros {count}",
+        "warn_non_company_email": "Empleados que utilizaron un correo no corporativo para pedir la comida: {names}{more}.",
     },
 }
 
@@ -195,3 +197,10 @@ def missing_hours_warning(lang: str, missing: list[dict]) -> str:
     more = t(lang, "mh_more", count=len(missing) - 10) if len(missing) > 10 else ""
 
     return t(lang, "mh_body", subject=subject, verb=verb, names=names, more=more)
+
+
+def non_company_email_warning(lang: str, labels: list[str]) -> str:
+    """Compone la frase 'dipendenti che hanno usato una mail non aziendale'."""
+    names = ", ".join(labels[:10])
+    more = t(lang, "mh_more", count=len(labels) - 10) if len(labels) > 10 else ""
+    return t(lang, "warn_non_company_email", names=names, more=more)
