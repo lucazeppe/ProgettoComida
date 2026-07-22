@@ -96,7 +96,7 @@ STRINGS = {
         "mh_and": "e",
         "mh_body": "{subject} {verb} ordini ma non risultano nel file ore (trattati come 0 ore, quindi anomalia su tutti i loro ordini): {names}{more}.",
         "mh_more": " e altri {count}",
-        "warn_no_email": "Dipendenti per cui non è stata trovata l'email in anagrafica (record assente o campo vuoto): {names}{more}.",
+        "warn_no_email": "Dipendenti per cui non è stata trovata l'email in anagrafica: {names}{more}.",
     },
     "es": {
         "page_title": "Control de Comidas de la Empresa",
@@ -177,7 +177,7 @@ STRINGS = {
         "mh_and": "y",
         "mh_body": "{subject} {verb} pedidos pero no aparecen en el archivo de horas (tratados como 0 horas, por lo tanto anomalía en todos sus pedidos): {names}{more}.",
         "mh_more": " y otros {count}",
-        "warn_no_email": "Empleados para los que no se encontró el correo en el directorio (registro ausente o campo vacío): {names}{more}.",
+        "warn_no_email": "Empleados para los que no se encontró el correo en el directorio: {names}{more}.",
     },
 }
 
