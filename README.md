@@ -27,9 +27,10 @@ python3 -m streamlit run app.py
 
 ## File di input richiesti
 
-1. **Ordini Zippi** (.xlsx) — una riga per dipendente, con le date di ordine elencate nelle colonne successive a `Correo`.
+1. **Ordini Zippi** (.xlsx) — una riga per dipendente, con le date di ordine elencate nelle colonne successive a `Correo`. La mail in questa colonna non viene più usata (vedi punto 4).
 2. **Ordini Amati** (.xlsx) — un foglio per settimana, colonne `Lunes..Viernes` con 0/1. Le date non sono esplicite: vengono dedotte automaticamente in base al mese scelto. I fogli si identificano dal **numero di settimana ISO contenuto nel nome del foglio** (es. `"23"`), non dall'ordine delle schede nel file: devono esistere tutti i fogli delle settimane del mese scelto (fogli extra vengono ignorati), ciascuno con tutte e 5 le colonne giorno e almeno una riga dipendente, altrimenti il caricamento viene bloccato con un errore descrittivo.
 3. **Ore lavorate** (.xlsx) — una riga per dipendente con **ID formato 2000xxx**, colonne datetime (una per giorno) con le ore lavorate.
+4. **Anagrafica dipendenti** (.xlsx) — export HR con una riga per dipendente; si usano solo le colonne `User/Employee ID` ed `Business Email Information Email Address` (tutte le altre, es. reparto/manager/date assunzione, vengono ignorate). È l'unica fonte dell'email usata nell'app e negli export: se un dipendente non compare in questo file, l'email resta vuota (nessun errore).
 
 La chiave di match tra i file è l'**Employee ID** in formato `2000xxx`.
 
@@ -39,12 +40,11 @@ La chiave di match tra i file è l'**Employee ID** in formato `2000xxx`.
 
 - **Vista dipendenti**: tabella con ordini/anomalie per giorno, filtri (solo anomalie, ricerca per ID/nome, intervallo date), e forzature manuali (rimuovi ordine Amati/Zippi, abbona vincolo ore) applicabili prima di generare gli export.
 - **Abbono automatico praticanti**: toggle che abbona di default l'anomalia "ore insufficienti" per i dipendenti riconosciuti come praticanti in base al dominio email (mai la doppia prenotazione), senza renderlo un vincolo permanente se poi disattivato.
-- **Selezione email**: se per lo stesso dipendente Amati e Zippi riportano email diverse, viene usata quella con dominio aziendale se presente (altrimenti una qualsiasi delle due). I dipendenti con almeno un ordine associato a un'email non aziendale vengono segnalati con un avviso dedicato, richiudibile, a video.
 - **Vista fornitori**: conteggio pasti per Amati/Zippi per giorno, per validare le fatture (nessun importo).
 
 ## Output
 
-Tutti gli export Excel sono **sempre in inglese**, indipendentemente dalla lingua scelta nell'interfaccia — così eventuali automazioni a valle (es. Power Automate) non dipendono dal toggle di lingua. Dove compare la colonna email, le email non aziendali sono scritte in **font rosso**.
+Tutti gli export Excel sono **sempre in inglese**, indipendentemente dalla lingua scelta nell'interfaccia — così eventuali automazioni a valle (es. Power Automate) non dipendono dal toggle di lingua.
 
 - **Scarica anomalie**: un record per ogni singola anomalia (ID dipendente, nome, email, giorno, ragione) — un giorno con entrambe le anomalie genera 2 record.
 - **Scarica riepilogo**: dipendenti in riga, giorni del mese in colonna; cella `A`/`Z`/`AZ` colorata di verde (diritto al pasto) o rosso (nessun diritto), con colonne di totale per dipendente e due righe di totale giornaliero per fornitore in fondo. La colonna `Note` segnala i dipendenti le cui anomalie ore sono dovute a un record assente nel file ore (non a ore insufficienti realmente registrate), da verificare a parte.
@@ -52,7 +52,7 @@ Tutti gli export Excel sono **sempre in inglese**, indipendentemente dalla lingu
 
 ## Struttura del codice
 
-- `parsers.py` — lettura e validazione dei 3 file di input.
+- `parsers.py` — lettura e validazione dei 4 file di input.
 - `business.py` — unione dati, calcolo costi/anomalie, applicazione delle forzature.
 - `exports.py` — generazione dei tre file Excel di export (sempre in inglese).
 - `i18n.py` — traduzioni IT/ES dell'interfaccia e dei messaggi di errore/warning dei parser.

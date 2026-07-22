@@ -11,19 +11,12 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
-from business import ANOMALY_DOUBLE_LABEL_EXPORT, ANOMALY_HOURS_LABEL_EXPORT, is_company_email
+from business import ANOMALY_DOUBLE_LABEL_EXPORT, ANOMALY_HOURS_LABEL_EXPORT
 
 GREEN_FILL = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
 RED_FILL = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
 GRAY_FILL = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")  # Bianco, Sfondo 1, Più scuro 15%
 HEADER_FONT = Font(bold=True)
-RED_FONT = Font(color="FF0000")
-
-
-def _mark_if_non_company_email(ws, row_idx: int, col_idx: int, email) -> None:
-    """Colora di rosso la cella email se non ha dominio aziendale."""
-    if email and not is_company_email(email):
-        ws.cell(row=row_idx, column=col_idx).font = RED_FONT
 
 
 def build_reminder_export(master_df: pd.DataFrame) -> bytes:
@@ -44,10 +37,8 @@ def build_reminder_export(master_df: pd.DataFrame) -> bytes:
         email = row["email"] if pd.notna(row["email"]) else ""
         if row["anomaly_double"]:
             ws.append([row["employee_id"], row["nombre"], email, row["date"], ANOMALY_DOUBLE_LABEL_EXPORT])
-            _mark_if_non_company_email(ws, ws.max_row, 3, email)
         if row["anomaly_hours"]:
             ws.append([row["employee_id"], row["nombre"], email, row["date"], ANOMALY_HOURS_LABEL_EXPORT])
-            _mark_if_non_company_email(ws, ws.max_row, 3, email)
 
     for col_cells in ws.columns:
         max_len = max((len(str(c.value)) if c.value is not None else 0) for c in col_cells)
@@ -94,7 +85,6 @@ def build_mail_reminder_export(master_df: pd.DataFrame) -> bytes:
             ", ".join(hours_dates), ", ".join(booking_dates),
             "N", None, None,
         ] + [None] * 30)
-        _mark_if_non_company_email(ws, ws.max_row, 4, email)
 
     last_row = max(ws.max_row, 1)
     last_col_letter = get_column_letter(len(MAIL_REMINDER_HEADERS))

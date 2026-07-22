@@ -28,9 +28,10 @@ STRINGS = {
         "uploader_zippi": "Ordini Zippi (.xlsx)",
         "uploader_amati": "Ordini Amati (.xlsx)",
         "uploader_hours": "Ore lavorate (.xlsx)",
+        "uploader_directory": "Anagrafica dipendenti (email aziendale) (.xlsx)",
         "button_process": "Processa",
-        "error_missing_files": "Carica tutti e 3 i file prima di procedere.",
-        "info_upload_prompt": "Carica i 3 file e premi **Processa** per iniziare.",
+        "error_missing_files": "Carica tutti e 4 i file prima di procedere.",
+        "info_upload_prompt": "Carica i 4 file e premi **Processa** per iniziare.",
         "dismiss_help": "Chiudi avviso",
         "subheader_employee_view": "Vista dipendenti — ordini e anomalie",
         "toggle_show_only_anomalies": "Mostra solo anomalie",
@@ -83,6 +84,9 @@ STRINGS = {
         "err_hours_duplicate_ids": "File Ore: trovati ID dipendente duplicati (righe diverse per lo stesso ID): {examples}. Verifica il file, ogni dipendente deve avere una sola riga.",
         "warn_hours_missing_columns": "File Ore: mancano colonne per {n} giorno/i lavorativo/i di {year}-{month:02d} (es: {examples}) — quei giorni saranno trattati come 0 ore.",
         "warn_hours_weekend_rows": "File Ore: trovate {n} righe con ore nel weekend (sabato/domenica), inattese.",
+        "err_directory_no_id_col": "File Anagrafica: colonna 'User/Employee ID' non trovata nella prima riga.",
+        "err_directory_no_email_col": "File Anagrafica: colonna 'Business Email Information Email Address' non trovata nella prima riga.",
+        "err_directory_duplicate_ids": "File Anagrafica: trovati ID dipendente duplicati (righe diverse per lo stesso ID): {examples}. Verifica il file, ogni dipendente deve avere una sola riga.",
         "mh_intern_singular": "praticante",
         "mh_intern_plural": "praticanti",
         "mh_regular_singular": "dipendente",
@@ -92,7 +96,6 @@ STRINGS = {
         "mh_and": "e",
         "mh_body": "{subject} {verb} ordini ma non risultano nel file ore (trattati come 0 ore, quindi anomalia su tutti i loro ordini): {names}{more}.",
         "mh_more": " e altri {count}",
-        "warn_non_company_email": "Dipendenti che hanno utilizzato una mail non aziendale per ordinare il pasto: {names}{more}.",
     },
     "es": {
         "page_title": "Control de Comidas de la Empresa",
@@ -105,9 +108,10 @@ STRINGS = {
         "uploader_zippi": "Pedidos Zippi (.xlsx)",
         "uploader_amati": "Pedidos Amati (.xlsx)",
         "uploader_hours": "Horas trabajadas (.xlsx)",
+        "uploader_directory": "Directorio de empleados (correo corporativo) (.xlsx)",
         "button_process": "Procesar",
-        "error_missing_files": "Carga los 3 archivos antes de continuar.",
-        "info_upload_prompt": "Carga los 3 archivos y presiona **Procesar** para comenzar.",
+        "error_missing_files": "Carga los 4 archivos antes de continuar.",
+        "info_upload_prompt": "Carga los 4 archivos y presiona **Procesar** para comenzar.",
         "dismiss_help": "Cerrar aviso",
         "subheader_employee_view": "Vista de empleados — pedidos y anomalías",
         "toggle_show_only_anomalies": "Mostrar solo anomalías",
@@ -160,6 +164,9 @@ STRINGS = {
         "err_hours_duplicate_ids": "Archivo de Horas: se encontraron ID de empleado duplicados (filas distintas para el mismo ID): {examples}. Verifica el archivo, cada empleado debe tener una sola fila.",
         "warn_hours_missing_columns": "Archivo de Horas: faltan columnas para {n} día(s) laborable(s) de {year}-{month:02d} (ej: {examples}) — esos días se tratarán como 0 horas.",
         "warn_hours_weekend_rows": "Archivo de Horas: se encontraron {n} filas con horas en el fin de semana (sábado/domingo), inesperadas.",
+        "err_directory_no_id_col": "Archivo de Directorio: no se encontró la columna 'User/Employee ID' en la primera fila.",
+        "err_directory_no_email_col": "Archivo de Directorio: no se encontró la columna 'Business Email Information Email Address' en la primera fila.",
+        "err_directory_duplicate_ids": "Archivo de Directorio: se encontraron ID de empleado duplicados (filas distintas para el mismo ID): {examples}. Verifica el archivo, cada empleado debe tener una sola fila.",
         "mh_intern_singular": "practicante",
         "mh_intern_plural": "practicantes",
         "mh_regular_singular": "empleado",
@@ -169,7 +176,6 @@ STRINGS = {
         "mh_and": "y",
         "mh_body": "{subject} {verb} pedidos pero no aparecen en el archivo de horas (tratados como 0 horas, por lo tanto anomalía en todos sus pedidos): {names}{more}.",
         "mh_more": " y otros {count}",
-        "warn_non_company_email": "Empleados que utilizaron un correo no corporativo para pedir la comida: {names}{more}.",
     },
 }
 
@@ -205,10 +211,3 @@ def missing_hours_warning(lang: str, missing: list[dict]) -> str:
     more = t(lang, "mh_more", count=len(missing) - 10) if len(missing) > 10 else ""
 
     return t(lang, "mh_body", subject=subject, verb=verb, names=names, more=more)
-
-
-def non_company_email_warning(lang: str, labels: list[str]) -> str:
-    """Compone la frase 'dipendenti che hanno usato una mail non aziendale'."""
-    names = ", ".join(labels[:10])
-    more = t(lang, "mh_more", count=len(labels) - 10) if len(labels) > 10 else ""
-    return t(lang, "warn_non_company_email", names=names, more=more)

@@ -23,15 +23,11 @@ ANOMALY_DOUBLE_LABEL_EXPORT = "Double Booking"
 ANOMALY_HOURS_LABEL_EXPORT = "Insufficient Office Hours"
 
 INTERN_EMAIL_SUFFIX = ".intern@e80group.com"
-COMPANY_EMAIL_DOMAIN = "@e80group.com"
 
 
 def is_intern(email) -> bool:
     return isinstance(email, str) and email.strip().lower().endswith(INTERN_EMAIL_SUFFIX)
 
-
-def is_company_email(email) -> bool:
-    return isinstance(email, str) and email.strip().lower().endswith(COMPANY_EMAIL_DOMAIN)
 
 MASTER_COLUMNS = [
     "employee_id", "nombre", "email", "date",
@@ -41,67 +37,41 @@ MASTER_COLUMNS = [
 ]
 
 
-def _build_employee_registry(zippi_df: pd.DataFrame, amati_df: pd.DataFrame, hours_df: pd.DataFrame) -> pd.DataFrame:
+def _build_employee_registry(
+    zippi_df: pd.DataFrame, amati_df: pd.DataFrame, hours_df: pd.DataFrame, directory_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Nome dedotto dagli ordini/ore come prima; l'email non arriva più dagli
+    ordini ma da un left-merge con l'anagrafica dipendenti (directory_df),
+    vuota se il dipendente non vi compare."""
     names: dict[str, str] = {}
-    emails: dict[str, list[str]] = {}
 
-    def _note(emp_id, nombre, email) -> None:
+    def _note_name(emp_id, nombre) -> None:
         if nombre and not names.get(emp_id):
             names[emp_id] = nombre
-        # isinstance esclude sia None sia il NaN float con cui pandas rappresenta
-        # le celle email mancanti in una colonna con dtype stringa mista: bool(nan)
-        # è True, quindi un controllo "if email:" da solo tratterebbe una cella
-        # vuota come un'email valida.
-        if isinstance(email, str) and email:
-            seen = emails.setdefault(emp_id, [])
-            if email not in seen:
-                seen.append(email)
 
     for _, r in amati_df.iterrows():
-        _note(r["employee_id"], title_case(f"{r['nombre']} {r['apellidos']}".strip()), r["email"])
+        _note_name(r["employee_id"], title_case(f"{r['nombre']} {r['apellidos']}".strip()))
 
     for _, r in zippi_df.iterrows():
-        _note(r["employee_id"], title_case(r["nombre"]), r["email"])
+        _note_name(r["employee_id"], title_case(r["nombre"]))
 
     for emp_id in hours_df["employee_id"].unique():
         names.setdefault(emp_id, None)
-        emails.setdefault(emp_id, [])
 
-    records = []
-    for emp_id in set(names) | set(emails):
-        candidates = emails.get(emp_id, [])
-        # Se per lo stesso dipendente compaiono email diverse tra i due ordini
-        # (Amati/Zippi) e una sola ha dominio aziendale, quella vince sempre;
-        # se nessuna ha dominio aziendale, si prende indistintamente la prima.
-        company_candidates = [e for e in candidates if is_company_email(e)]
-        email = company_candidates[0] if company_candidates else (candidates[0] if candidates else None)
-        records.append({"employee_id": emp_id, "nombre": names.get(emp_id), "email": email})
+    for emp_id in directory_df["employee_id"]:
+        names.setdefault(emp_id, None)
 
-    reg = pd.DataFrame(records, columns=["employee_id", "nombre", "email"])
+    reg = pd.DataFrame(
+        [{"employee_id": k, "nombre": v} for k, v in names.items()],
+        columns=["employee_id", "nombre"],
+    )
     # Evita che i valori mancanti diventino NaN float (celle Excel non valide negli export):
     # meglio una stringa vuota, sia per i DataFrame vuoti che per join successivi.
     reg["nombre"] = reg["nombre"].fillna("")
+
+    reg = reg.merge(directory_df[["employee_id", "email"]], on="employee_id", how="left")
     reg["email"] = reg["email"].fillna("")
     return reg
-
-
-def find_non_company_email_ids(zippi_df: pd.DataFrame, amati_df: pd.DataFrame, exclude_weekends: bool = True) -> set:
-    """Employee ID con almeno un ordine (Amati o Zippi) associato a una email non
-    aziendale — anche se poi, in caso di conflitto con un'altra email aziendale
-    per lo stesso dipendente, è quest'ultima ad essere scelta per le comunicazioni."""
-    if exclude_weekends:
-        zippi_df = zippi_df[_is_weekday(zippi_df["date"])]
-        amati_df = amati_df[_is_weekday(amati_df["date"])]
-
-    ids: set = set()
-    for df in (zippi_df, amati_df):
-        # isinstance esclude il NaN float con cui pandas rappresenta le celle
-        # email mancanti in una colonna con dtype stringa mista (bool(nan) è
-        # True): senza, un dipendente senza alcuna email verrebbe segnalato
-        # come se avesse usato un'email non aziendale.
-        mask = df["email"].apply(lambda e: isinstance(e, str) and e != "" and not is_company_email(e))
-        ids.update(df.loc[mask, "employee_id"])
-    return ids
 
 
 def _is_weekday(dates: pd.Series) -> pd.Series:
@@ -116,6 +86,7 @@ def build_master(
     zippi_df: pd.DataFrame,
     amati_df: pd.DataFrame,
     hours_df: pd.DataFrame,
+    directory_df: pd.DataFrame,
     year: int,
     month: int,
     exclude_weekends: bool = True,
@@ -125,7 +96,7 @@ def build_master(
     Se exclude_weekends è True, righe con data di sabato/domenica non entrano nel
     calcolo di costi/anomalie (i giorni non lavorativi non danno diritto al pasto).
     """
-    registry = _build_employee_registry(zippi_df, amati_df, hours_df)
+    registry = _build_employee_registry(zippi_df, amati_df, hours_df, directory_df)
 
     if exclude_weekends:
         zippi_df = zippi_df[_is_weekday(zippi_df["date"])]

@@ -120,7 +120,6 @@ def parse_zippi(file, year: int, month: int, warn_weekends: bool = True, lang: s
         if nombre is None or str(nombre).strip() == "":
             continue  # riga vuota residua (es. "PRIMERA SEMANA"): salta, non è fine dati
         emp_id = _normalize_id(row[col_id])
-        email = row[col_email]
         if emp_id is None:
             continue
         for cell in row[date_col_start:]:
@@ -136,7 +135,6 @@ def parse_zippi(file, year: int, month: int, warn_weekends: bool = True, lang: s
             records.append({
                 "employee_id": emp_id,
                 "nombre": str(nombre).strip(),
-                "email": str(email).strip() if email else None,
                 "date": d,
             })
 
@@ -145,7 +143,7 @@ def parse_zippi(file, year: int, month: int, warn_weekends: bool = True, lang: s
         examples = ", ".join(f"{n} {prefix} {d.isoformat()}" for _, n, d in out_of_month_dates[:5])
         raise ValueError(i18n.t(lang, "err_zippi_out_of_month", year=year, month=month, examples=examples))
 
-    df = pd.DataFrame(records, columns=["employee_id", "nombre", "email", "date"])
+    df = pd.DataFrame(records, columns=["employee_id", "nombre", "date"])
 
     if warn_weekends:
         weekend_rows = df[df["date"].apply(lambda d: d.weekday() >= 5)]
@@ -247,7 +245,6 @@ def parse_amati(file, year: int, month: int, lang: str = "it") -> tuple[pd.DataF
             col_nombre = lower_header.index("nombre")
             col_apellidos = lower_header.index("apellidos")
             col_id = lower_header.index("empleado")
-            col_email = lower_header.index("correo")
         except ValueError as e:
             raise ValueError(i18n.t(lang, "err_amati_bad_header", sheet_name=sheet_name, e=e))
 
@@ -274,7 +271,6 @@ def parse_amati(file, year: int, month: int, lang: str = "it") -> tuple[pd.DataF
             has_data_row = True
             nombre = str(row[col_nombre]).strip()
             apellidos = str(row[col_apellidos]).strip() if row[col_apellidos] else ""
-            email = row[col_email]
             for wd_idx, col_idx in day_cols.items():
                 value = row[col_idx]
                 if value is None:
@@ -297,14 +293,13 @@ def parse_amati(file, year: int, month: int, lang: str = "it") -> tuple[pd.DataF
                     "employee_id": emp_id,
                     "nombre": nombre,
                     "apellidos": apellidos,
-                    "email": str(email).strip() if email else None,
                     "date": target_date,
                 })
 
         if not has_data_row:
             raise ValueError(i18n.t(lang, "err_amati_empty_week_sheet", sheet_name=sheet_name, week=week_number))
 
-    df = pd.DataFrame(records, columns=["employee_id", "nombre", "apellidos", "email", "date"])
+    df = pd.DataFrame(records, columns=["employee_id", "nombre", "apellidos", "date"])
     return df, warnings
 
 
@@ -428,4 +423,59 @@ def parse_hours(file, year: int, month: int, warn_weekends: bool = True, lang: s
         if not weekend_rows.empty:
             warnings.append(i18n.t(lang, "warn_hours_weekend_rows", n=len(weekend_rows)))
 
+    return df, warnings
+
+
+# ---------------------------------------------------------------------------
+# ANAGRAFICA DIPENDENTI: colonna ID + colonna email aziendale, resto ignorato
+# ---------------------------------------------------------------------------
+
+def parse_employee_directory(file, lang: str = "it") -> tuple[pd.DataFrame, list[str]]:
+    """Export HR con una riga per dipendente: usa solo ID ed email aziendale,
+    ignora tutte le altre colonne (reparto, manager, date assunzione, ecc.).
+    L'header è sempre alla prima riga (a differenza di Zippi/Ore non serve
+    cercarlo su più righe)."""
+    warnings: list[str] = []
+    wb = openpyxl.load_workbook(file, data_only=True)
+    ws = wb[wb.sheetnames[0]]
+
+    header = [c.value for c in ws[1]]
+    # Collassa gli spazi multipli prima del confronto: l'export reale ha
+    # intestazioni con doppio spazio (es. "Business  Email Information...").
+    norm_header = [" ".join(str(v).strip().lower().split()) if v else "" for v in header]
+
+    try:
+        col_id = norm_header.index("user/employee id")
+    except ValueError:
+        raise ValueError(i18n.t(lang, "err_directory_no_id_col"))
+    try:
+        col_email = norm_header.index("business email information email address")
+    except ValueError:
+        raise ValueError(i18n.t(lang, "err_directory_no_email_col"))
+
+    records: dict[str, str | None] = {}
+    duplicate_ids = set()
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not row or row[col_id] is None:
+            continue
+        emp_id = _normalize_id(row[col_id])
+        if emp_id is None:
+            continue
+        if not re.fullmatch(r"\d{4,10}", emp_id):
+            # Formato ID non riconosciuto: riga ignorata silenziosamente,
+            # stesso comportamento del file Ore (file di supporto, non blocca).
+            continue
+        if emp_id in records:
+            duplicate_ids.add(emp_id)
+        email = row[col_email]
+        records[emp_id] = str(email).strip() if email else None
+
+    if duplicate_ids:
+        examples = ", ".join(sorted(duplicate_ids)[:10])
+        raise ValueError(i18n.t(lang, "err_directory_duplicate_ids", examples=examples))
+
+    df = pd.DataFrame(
+        [{"employee_id": k, "email": v} for k, v in records.items()],
+        columns=["employee_id", "email"],
+    )
     return df, warnings
