@@ -46,6 +46,10 @@ if "missing_hours_employees" not in st.session_state:
     st.session_state.missing_hours_employees = []
 if "missing_hours_dismissed" not in st.session_state:
     st.session_state.missing_hours_dismissed = False
+if "no_email_employees" not in st.session_state:
+    st.session_state.no_email_employees = []
+if "no_email_dismissed" not in st.session_state:
+    st.session_state.no_email_dismissed = False
 
 st.title(i18n.t(lang, "app_title"))
 
@@ -106,12 +110,24 @@ if process:
         label = f"{emp_id} ({nombre})" if nombre else emp_id
         missing_employees.append({"label": label, "is_intern": is_intern(email)})
 
+    # Dipendenti con almeno un ordine ma senza email in anagrafica (record
+    # assente o campo vuoto): non blocca il processamento (l'email resta
+    # vuota negli export), ma segnalato con un avviso dedicato e richiudibile.
+    no_email_employees = []
+    for emp_id in sorted(ordering_ids):
+        row = master_df.loc[master_df["employee_id"] == emp_id]
+        if not row.empty and not row["email"].iloc[0]:
+            nombre = row["nombre"].iloc[0] if row["nombre"].iloc[0] else ""
+            no_email_employees.append(f"{emp_id} ({nombre})" if nombre else emp_id)
+
     st.session_state.master_df = master_df
     st.session_state.overrides = {}
     st.session_state.warnings = all_warnings
     st.session_state.period = (year, month)
     st.session_state.missing_hours_employees = missing_employees
     st.session_state.missing_hours_dismissed = False
+    st.session_state.no_email_employees = no_email_employees
+    st.session_state.no_email_dismissed = False
 
 if st.session_state.master_df is None:
     st.info(i18n.t(lang, "info_upload_prompt"))
@@ -127,6 +143,15 @@ if st.session_state.missing_hours_employees and not st.session_state.missing_hou
     with col_w2:
         if st.button("✕", key="dismiss_missing_hours", help=i18n.t(lang, "dismiss_help")):
             st.session_state.missing_hours_dismissed = True
+            st.rerun()
+
+if st.session_state.no_email_employees and not st.session_state.no_email_dismissed:
+    col_ne1, col_ne2 = st.columns([12, 1])
+    with col_ne1:
+        st.warning(i18n.no_email_warning(lang, st.session_state.no_email_employees))
+    with col_ne2:
+        if st.button("✕", key="dismiss_no_email", help=i18n.t(lang, "dismiss_help")):
+            st.session_state.no_email_dismissed = True
             st.rerun()
 
 master_df = st.session_state.master_df
